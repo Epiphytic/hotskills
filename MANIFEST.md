@@ -20,7 +20,12 @@
 
 | Module / Function | File Path | Description | Dependencies | Idempotent (Y/N) |
 | :--- | :--- | :--- | :--- | :--- |
-| *(Phase 1 modules added here as tasks complete)* | | | | |
+| `MCP server entry` | `server/src/index.ts` | Boots McpServer with stdio transport, registers 6 tools | `@modelcontextprotocol/sdk`, `tools/index.ts` | Y |
+| `registerTools()` | `server/src/tools/index.ts` | Registers all 6 hotskills tools on a McpServer | per-tool `register*` modules | Y |
+| `registerSearch/Activate/Deactivate/List/Invoke/Audit()` | `server/src/tools/{search,activate,deactivate,list,invoke,audit}.ts` | Phase-1 stub handlers returning `{stub: true}`; full implementations land in Phases 2–4 | `zod`, MCP SDK | Y |
+| `validateConfig()` / `validateState()` | `server/src/schemas/index.ts` | ajv-compiled validators for config.v1 and state.v1 schemas | `ajv`, `ajv-formats` | Y |
+| `phase0-api-verify.sh` | `scripts/phase0-api-verify.sh` | RISK-FIRST CI smoke-test for skills.sh `/api/search` and add-skill.vercel.sh `/audit` | `curl`, `node` | Y |
+| `phase0-npx-verify.sh` | `scripts/phase0-npx-verify.sh` | RISK-FIRST CI smoke-test for `skills add --target` (currently fails: flag absent in v1.5.1; resolution tracked in beads `hotskills-ns3`) | `npx`, `skills` CLI | Y |
 
 ---
 

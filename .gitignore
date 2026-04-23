@@ -3,3 +3,17 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Build artifacts
+server/dist/
+server/node_modules/
+
+# Local config (never commit)
+.env.local
+*.env.local
+
+# BRAINS runtime state
+docs/plans/.state/
+
+# Hotskills per-project mutable state (per ADR-003)
+.hotskills/state.json
