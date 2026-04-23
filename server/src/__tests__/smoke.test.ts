@@ -1,10 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 
-test('smoke: server module exports are accessible', async () => {
-  assert.ok(true, 'basic smoke test passes');
-});
-
 test('smoke: schema validators work', async () => {
   const { validateConfig, validateState } = await import('../schemas/index.js');
 

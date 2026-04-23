@@ -26,9 +26,10 @@ if ! command -v skills >/dev/null 2>&1 && ! npx --no-install skills --version >/
   fail "skills_available" "skills CLI not found; install with: npm install -g skills"
 fi
 
-# Step 2: Check if --target flag exists in 'skills add' help output
-ADD_HELP=$(skills add vercel-labs/agent-skills --list 2>&1 || true)
-if skills --help 2>&1 | grep -q '\-\-target'; then
+# Step 2: Check if --target flag exists in 'skills add' subcommand help output.
+# We check the subcommand-specific help, not the top-level help, since --target
+# would be subcommand-specific if present.
+if skills add --help 2>&1 | grep -q '\-\-target'; then
   TARGET_SUPPORTED=true
 else
   TARGET_SUPPORTED=false
