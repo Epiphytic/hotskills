@@ -1,7 +1,7 @@
 {
   "name": "@epiphytic/hotskills-server",
   "version": "0.1.0",
-  "description": "MCP server for hotskills — skill management for Claude Code",
+  "description": "MCP server for hotskills \u2014 skill management for Claude Code",
   "type": "module",
   "main": "./dist/index.js",
   "engines": {
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "node --test dist/__tests__/**/*.js",
+    "test": "node --test dist/__tests__/smoke.test.js dist/__tests__/tools.test.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
