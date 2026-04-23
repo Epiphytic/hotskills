@@ -3,6 +3,11 @@
 # Exits non-zero with structured JSON output on failure.
 set -uo pipefail
 
+_TMPDIR="/tmp/hotskills-phase0-api-$$"
+mkdir -p "$_TMPDIR"
+_cleanup() { rm -rf "$_TMPDIR"; }
+trap _cleanup EXIT
+
 FAILURES="[]"
 
 add_failure() {
@@ -16,7 +21,7 @@ process.stdout.write(JSON.stringify(failures));
 }
 
 # Test 1: skills.sh search API
-SKILLS_HTTP=$(curl -o /tmp/hotskills-phase0-skills.json -w "%{http_code}" -sf --max-time 10 \
+SKILLS_HTTP=$(curl -o "$_TMPDIR/skills.json" -w "%{http_code}" -sf --max-time 10 \
   'https://skills.sh/api/search?q=react' 2>/dev/null || echo "000")
 
 if [[ "$SKILLS_HTTP" != "200" ]]; then
@@ -25,7 +30,7 @@ else
   # Validate JSON shape: {skills: [...], count: int}
   node -e "
 const fs = require('fs');
-const data = fs.readFileSync('/tmp/hotskills-phase0-skills.json', 'utf8');
+const data = fs.readFileSync('"$_TMPDIR/skills.json"', 'utf8');
 const d = JSON.parse(data);
 if (!Array.isArray(d.skills)) { process.stderr.write('no skills array'); process.exit(1); }
 if (typeof d.count !== 'number') { process.stderr.write('no count field'); process.exit(1); }
@@ -34,13 +39,13 @@ const s = d.skills[0];
 ['id','skillId','name','installs','source'].forEach(k => {
   if (!(k in s)) { process.stderr.write('missing field: ' + k); process.exit(1); }
 });
-" 2>/tmp/hotskills-phase0-skills-err.txt || {
-    add_failure "skills.sh" "shape validation failed: $(cat /tmp/hotskills-phase0-skills-err.txt)" "200"
+" 2>"$_TMPDIR/skills-err.txt" || {
+    add_failure "skills.sh" "shape validation failed: $(cat "$_TMPDIR/skills-err.txt")" "200"
   }
 fi
 
 # Test 2: audit API
-AUDIT_HTTP=$(curl -o /tmp/hotskills-phase0-audit.json -w "%{http_code}" -sf --max-time 10 \
+AUDIT_HTTP=$(curl -o "$_TMPDIR/audit.json" -w "%{http_code}" -sf --max-time 10 \
   'https://add-skill.vercel.sh/audit?source=vercel-labs/agent-skills&skills=react-best-practices' 2>/dev/null || echo "000")
 
 if [[ "$AUDIT_HTTP" != "200" ]]; then
@@ -49,7 +54,7 @@ else
   # Validate AuditResponse shape: {<slug>: {<partner>: {risk: string}}}
   node -e "
 const fs = require('fs');
-const data = fs.readFileSync('/tmp/hotskills-phase0-audit.json', 'utf8');
+const data = fs.readFileSync('"$_TMPDIR/audit.json"', 'utf8');
 const d = JSON.parse(data);
 const skills = Object.keys(d);
 if (skills.length === 0) { process.stderr.write('empty audit response'); process.exit(1); }
@@ -61,8 +66,8 @@ partners.forEach((p, i) => {
     process.stderr.write('partner ' + i + ' missing risk field'); process.exit(1);
   }
 });
-" 2>/tmp/hotskills-phase0-audit-err.txt || {
-    add_failure "audit" "AuditResponse shape validation failed: $(cat /tmp/hotskills-phase0-audit-err.txt)" "200"
+" 2>"$_TMPDIR/audit-err.txt" || {
+    add_failure "audit" "AuditResponse shape validation failed: $(cat "$_TMPDIR/audit-err.txt")" "200"
   }
 fi
 
