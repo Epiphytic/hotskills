@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "brains/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Build
+        run: npm run build
+        working-directory: server
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: server
+
+      - name: Test
+        run: node --test 'dist/__tests__/**/*.js'
+        working-directory: server
