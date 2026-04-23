@@ -1,0 +1,6 @@
+{
+  "name": "Hotskills",
+  "description": "Discover, activate, and invoke Claude Code skills with security gating. Search skills.sh, activate with audit-based risk filtering, and inject skill context into your sessions automatically.",
+  "icon": "🔥",
+  "categories": ["productivity", "skills", "developer-tools"]
+}
