@@ -1,0 +1,29 @@
+name: Phase 0 npx-skills Behavior Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  npx-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install skills CLI
+        run: npm install -g skills@1.5.1
+
+      - name: Run npx-skills behavior smoke test
+        id: npx-verify
+        run: bash scripts/phase0-npx-verify.sh | tee phase0-npx-verify-output.json
+
+      - name: Upload failure artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-npx-verify-output
+          path: phase0-npx-verify-output.json
