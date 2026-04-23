@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/epiphytic/hotskills/schemas/state.v1.json",
+  "title": "Hotskills State v1",
+  "type": "object",
+  "required": ["version", "opportunistic_pending", "session_id"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "opportunistic_pending": {
+      "type": "boolean",
+      "default": false
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "last_compact_at": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ],
+      "default": null
+    },
+    "last_session_start_at": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ],
+      "default": null
+    }
+  }
+}
