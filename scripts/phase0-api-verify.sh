@@ -3,8 +3,11 @@
 # Exits non-zero with structured JSON output on failure.
 set -uo pipefail
 
-_TMPDIR="/tmp/hotskills-phase0-api-$$"
-mkdir -p "$_TMPDIR"
+# mktemp -d guarantees atomic creation of an unguessable directory under $TMPDIR
+# (or /tmp). This closes the symlink/predictable-name race that a $$ PID
+# suffix leaves open: PIDs are guessable, allowing a local attacker on a
+# shared host to pre-create the path as a symlink.
+_TMPDIR=$(mktemp -d -t hotskills-phase0-api-XXXXXX)
 _cleanup() { rm -rf "$_TMPDIR"; }
 trap _cleanup EXIT
 

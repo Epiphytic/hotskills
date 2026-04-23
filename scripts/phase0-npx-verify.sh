@@ -5,8 +5,9 @@
 # structured diagnostic and blocks Phase 2 work.
 set -uo pipefail
 
-TMPDIR_BASE="/tmp/hotskills-phase0-verify-$$"
-mkdir -p "$TMPDIR_BASE"
+# mktemp -d guarantees atomic creation of an unguessable directory; see the
+# matching note in phase0-api-verify.sh.
+TMPDIR_BASE=$(mktemp -d -t hotskills-phase0-verify-XXXXXX)
 
 cleanup() { rm -rf "$TMPDIR_BASE"; }
 trap cleanup EXIT
