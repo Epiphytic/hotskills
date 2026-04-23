@@ -12,18 +12,26 @@ function runMcpSession(messages: object[], expectedIds: number[]): Promise<Map<n
     const proc = spawn('node', [SERVER_PATH], { stdio: ['pipe', 'pipe', 'pipe'] });
     const byId = new Map<number, object>();
     let buf = '';
+    let stderr = '';
     let done = false;
 
-    const finish = () => {
-      if (!done) {
-        done = true;
-        clearTimeout(timer);
-        proc.kill();
-        resolve(byId);
-      }
+    const finish = (err?: Error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      proc.kill();
+      if (err) reject(err);
+      else resolve(byId);
     };
 
-    const timer = setTimeout(finish, 5000);
+    const timer = setTimeout(() => {
+      const missing = expectedIds.filter((id) => !byId.has(id));
+      if (missing.length > 0) {
+        finish(new Error(`Timeout: missing JSON-RPC ids ${missing.join(',')}; stderr=${stderr.slice(0, 500)}`));
+      } else {
+        finish();
+      }
+    }, 5000);
 
     proc.stdout.on('data', (chunk: Buffer) => {
       buf += chunk.toString();
@@ -41,7 +49,16 @@ function runMcpSession(messages: object[], expectedIds: number[]): Promise<Map<n
       }
     });
 
-    proc.on('error', (err) => { clearTimeout(timer); reject(err); });
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    proc.on('error', (err) => finish(err));
+
+    proc.on('exit', (code, signal) => {
+      const missing = expectedIds.filter((id) => !byId.has(id));
+      if (missing.length > 0) {
+        finish(new Error(`Server exited (code=${code}, signal=${signal}) before all expected ids arrived; missing=${missing.join(',')}; stderr=${stderr.slice(0, 500)}`));
+      }
+    });
 
     for (const msg of messages) {
       proc.stdin.write(JSON.stringify(msg) + '\n');
