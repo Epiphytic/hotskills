@@ -23,35 +23,7 @@
 set -u
 # NOTE: no `set -e`. We trap and swallow every error per ADR-005 hook safety.
 
-# Always exit 0 on any unexpected error path.
-trap '_log_exception "trap" "${BASH_COMMAND:-?}" "${LINENO:-?}"' ERR
-trap 'exit 0' EXIT
-
-# ─── Argument parsing ───
-
-EVENT=""
-for arg in "$@"; do
-  case "$arg" in
-    --event=PostCompact|--event=SessionStart|--event=UserPromptSubmit)
-      EVENT="${arg#--event=}"
-      ;;
-    --event=*)
-      _log_event_unknown "${arg#--event=}"
-      exit 0
-      ;;
-    *)
-      # Unknown argument — log and exit clean.
-      :
-      ;;
-  esac
-done
-
-if [[ -z "$EVENT" ]]; then
-  _log_event_unknown "<missing>"
-  exit 0
-fi
-
-# ─── Path resolution ───
+# ─── Path resolution (must precede logging helpers and arg parsing) ───
 
 PROJECT_CWD="${HOTSKILLS_PROJECT_CWD:-${CLAUDE_PROJECT_DIR:-$PWD}}"
 CONFIG_DIR="${HOTSKILLS_CONFIG_DIR:-$HOME/.config/hotskills}"
@@ -61,13 +33,14 @@ PROJECT_STATE="${PROJECT_HOTSKILLS}/state.json"
 GLOBAL_CONFIG="${CONFIG_DIR%/}/config.json"
 LOG_DIR="${CONFIG_DIR%/}/logs"
 LOG_FILE="${LOG_DIR}/hook.log"
+EVENT=""
 
-# If the project never set up hotskills, exit silently. ADR-005 explicit.
-if [[ ! -d "$PROJECT_HOTSKILLS" ]]; then
-  exit 0
-fi
+# Always exit 0 on any unexpected error path. Defined before any function
+# call so even early failures route through the trap safely.
+trap '_log_exception "trap" "${BASH_COMMAND:-?}" "${LINENO:-?}"' ERR
+trap 'exit 0' EXIT
 
-# ─── Logging helpers ───
+# ─── Logging helpers (defined before arg parsing so they can be called) ───
 
 # Append a single JSON line to LOG_FILE. Best-effort, never fails.
 _log_json() {
@@ -103,6 +76,34 @@ _log_io() {
   local path="${2//\"/\\\"}"
   _log_json "warn" "io_failure" "\"what\":\"${what}\",\"path\":\"${path}\""
 }
+
+# ─── Argument parsing ───
+
+for arg in "$@"; do
+  case "$arg" in
+    --event=PostCompact|--event=SessionStart|--event=UserPromptSubmit)
+      EVENT="${arg#--event=}"
+      ;;
+    --event=*)
+      _log_event_unknown "${arg#--event=}"
+      exit 0
+      ;;
+    *)
+      # Unknown argument — silently ignore (don't bloat the log).
+      :
+      ;;
+  esac
+done
+
+if [[ -z "$EVENT" ]]; then
+  _log_event_unknown "<missing>"
+  exit 0
+fi
+
+# If the project never set up hotskills, exit silently. ADR-005 explicit.
+if [[ ! -d "$PROJECT_HOTSKILLS" ]]; then
+  exit 0
+fi
 
 # ─── jq availability ───
 #

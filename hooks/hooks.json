@@ -1,19 +1,35 @@
 {
-  "hooks": [
-    {
-      "event": "PostCompact",
-      "matcher": "*",
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh --event=PostCompact"
-    },
-    {
-      "event": "SessionStart",
-      "matcher": "*",
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh --event=SessionStart"
-    },
-    {
-      "event": "UserPromptSubmit",
-      "matcher": "*",
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh --event=UserPromptSubmit"
-    }
-  ]
+  "description": "Hotskills hooks per ADR-005 — emit activated-skills + opportunistic system-reminders on PostCompact, SessionStart, and UserPromptSubmit so the model retains awareness across compaction and session boundaries.",
+  "hooks": {
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh\" --event=PostCompact"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh\" --event=SessionStart"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh\" --event=UserPromptSubmit"
+          }
+        ]
+      }
+    ]
+  }
 }
