@@ -5,6 +5,12 @@ import { existsSync } from 'node:fs';
 import { z } from 'zod';
 import { getAuditData, type SkillAuditData } from '../audit.js';
 import { cacheAgeSeconds, cachePath, cacheRead, cacheWrite } from '../cache.js';
+import {
+  mergeConfigs,
+  readGlobalConfig,
+  readProjectConfig,
+  type SourceEntry,
+} from '../config.js';
 import { searchSkillsAPI, type SearchSkill } from '../vendor/vercel-skills/find.js';
 
 // ─── Types ───
@@ -166,10 +172,146 @@ async function decorateWithAudit(seeds: SeedEntry[]): Promise<SearchResultEntry[
   return out;
 }
 
+// ─── github-source enumeration (carried follow-up hotskills-m8r) ───
+
+export interface GithubSearchSeed {
+  skill_id: string;
+  name: string;
+  installs: number;
+  source: string; // owner/repo
+  slug: string;
+  preferred: boolean;
+}
+
+export type GithubEnumerator = (
+  source: SourceEntry,
+  query: string
+) => Promise<GithubSearchSeed[]>;
+
+/**
+ * Default github source enumerator: GET the GitHub Trees API for the
+ * source's HEAD ref, walk the tree for SKILL.md files in the four
+ * scan-order subdirectories, and emit one seed per match.
+ *
+ * Best-effort: any network failure or non-2xx response yields []. Failures
+ * never break a search call — the skills.sh path still produces results.
+ */
+const SCAN_PREFIXES: readonly string[] = ['', 'skills/', '.claude/skills/', '.agents/skills/'];
+
+export const defaultGithubEnumerator: GithubEnumerator = async (source, query) => {
+  const ref = source.branch ?? 'HEAD';
+  const url = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${ref}?recursive=1`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    return [];
+  }
+  if (!res.ok) return [];
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    return [];
+  }
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !Array.isArray((body as { tree?: unknown }).tree)
+  ) {
+    return [];
+  }
+  const tree = (body as { tree: Array<{ path: string; type: string }> }).tree;
+  const out: GithubSearchSeed[] = [];
+  const q = query.toLowerCase();
+  for (const entry of tree) {
+    if (entry.type !== 'blob') continue;
+    if (!entry.path.endsWith('/SKILL.md') && entry.path !== 'SKILL.md') continue;
+
+    // Determine slug per scan order (longest matching prefix wins).
+    let slug: string | null = null;
+    for (const prefix of SCAN_PREFIXES) {
+      const expected = `${prefix}`;
+      if (expected === '' && entry.path === 'SKILL.md') {
+        slug = source.repo; // root SKILL.md uses repo name
+        break;
+      }
+      if (expected !== '' && entry.path.startsWith(expected) && entry.path.endsWith('/SKILL.md')) {
+        const inner = entry.path.slice(expected.length, -'/SKILL.md'.length);
+        // Reject nested skills (only one level under prefix).
+        if (inner.includes('/')) continue;
+        if (inner === '') continue;
+        slug = inner;
+        break;
+      }
+    }
+    if (slug === null) continue;
+    if (q !== '' && !slug.toLowerCase().includes(q)) continue;
+
+    out.push({
+      skill_id: `github:${source.owner}/${source.repo}:${slug}`,
+      name: slug,
+      installs: 0, // github sources have no install metric
+      source: `${source.owner}/${source.repo}`,
+      slug,
+      preferred: source.preferred === true,
+    });
+  }
+  return out;
+};
+
+async function enumerateGithubSeeds(
+  configDir: string,
+  query: string,
+  enumerator: GithubEnumerator,
+  sourcesFilter: string[] | undefined,
+  projectCwd: string | undefined
+): Promise<GithubSearchSeed[]> {
+  // Read merged config to pick up github sources. Skip if projectCwd
+  // unknown (CLI invocations may not have one).
+  let merged;
+  try {
+    const project = projectCwd ? await readProjectConfig(projectCwd) : { version: 1 };
+    const global = await readGlobalConfig(configDir);
+    merged = mergeConfigs(global, project);
+  } catch {
+    return [];
+  }
+  const sources = (merged.sources ?? []).filter((s) => s.type === 'github');
+  if (sources.length === 0) return [];
+
+  const out: GithubSearchSeed[] = [];
+  for (const source of sources) {
+    const ownerRepo = `${source.owner}/${source.repo}`;
+    if (sourcesFilter && !sourcesFilter.includes(ownerRepo)) continue;
+    // Per-source on-disk cache (1h TTL) keyed by owner/repo + query.
+    const cacheKey = createHash('sha256')
+      .update(`gh ${ownerRepo} ${query}`)
+      .digest('hex');
+    const path = cachePath(configDir, 'github-sources', cacheKey);
+    let seeds = await cacheRead<GithubSearchSeed[]>(path, 3600);
+    if (!seeds) {
+      seeds = await enumerator(source, query);
+      try {
+        cacheWrite(path, seeds);
+      } catch {
+        // non-fatal
+      }
+    }
+    out.push(...seeds);
+  }
+  return out;
+}
+
 // ─── Search engine ───
 
 export interface SearchOptions {
   configDir?: string;
+  /** Project cwd for reading per-project config (github sources). */
+  projectCwd?: string;
   findStrategy?: FindStrategy;
   /** Max results to keep after merging (default 25). */
   limit?: number;
@@ -181,6 +323,8 @@ export interface SearchOptions {
   cliRunner?: typeof searchViaCli;
   /** Inject audit decoration (for tests). */
   auditDecorator?: typeof decorateWithAudit;
+  /** Inject github source enumerator (for tests). */
+  githubEnumerator?: GithubEnumerator;
   /** Skip cache read/write entirely (for tests / `--fresh` callers). */
   skipCache?: boolean;
 }
@@ -244,9 +388,56 @@ export async function runSearch(query: string, opts: SearchOptions = {}): Promis
   });
 
   const decorated = await decorate(seeds);
+
+  // ─── Github source enumeration (hotskills-m8r) ───
+  // Only attempt if we have a projectCwd available (so we can read per-project sources).
+  // Tests pass projectCwd explicitly; production reads from process.env.
+  const projectCwd = opts.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
+  let githubSeeds: GithubSearchSeed[] = [];
+  if (projectCwd) {
+    const enumerator = opts.githubEnumerator ?? defaultGithubEnumerator;
+    try {
+      githubSeeds = await enumerateGithubSeeds(
+        configDir,
+        query,
+        enumerator,
+        opts.sources,
+        projectCwd
+      );
+    } catch {
+      // best-effort
+    }
+  }
+  const githubResults: SearchResultEntry[] = githubSeeds.map((g) => ({
+    skill_id: g.skill_id,
+    name: g.name,
+    installs: g.installs,
+    source: g.source,
+    slug: g.slug,
+    audit: null,
+    gate_status: 'unknown' as const,
+  }));
+
+  // Merge: skills.sh first by default, but preferred github sources (any
+  // entry where the owner/repo source had preferred:true) move to the top.
+  const githubPreferred = githubResults.filter((r) =>
+    githubSeeds.some((s) => s.skill_id === r.skill_id && s.preferred)
+  );
+  const githubRest = githubResults.filter((r) => !githubPreferred.includes(r));
+  const combined = [...githubPreferred, ...decorated, ...githubRest];
+
+  // Dedupe by skill_id (skills.sh and github don't normally collide, but
+  // defense in depth — first occurrence wins).
+  const seen = new Set<string>();
+  const deduped = combined.filter((r) => {
+    if (seen.has(r.skill_id)) return false;
+    seen.add(r.skill_id);
+    return true;
+  });
+
   const filtered = opts.sources
-    ? decorated.filter((r) => opts.sources!.some((s) => r.source === s))
-    : decorated;
+    ? deduped.filter((r) => opts.sources!.some((s) => r.source === s))
+    : deduped;
   const limited = filtered.slice(0, limit);
 
   if (!opts.skipCache) {

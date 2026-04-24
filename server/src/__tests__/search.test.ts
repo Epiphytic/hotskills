@@ -234,3 +234,143 @@ test('exported types are importable', () => {
   void _check;
   assert.ok(true);
 });
+
+// ─── github source enumeration (hotskills-m8r) ───
+
+import { writeProjectConfig, writeGlobalConfig } from '../config.js';
+import type { GithubEnumerator } from '../tools/search.js';
+
+function makeProjectCwd(): string {
+  const p = join(SANDBOX, `proj-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(p, { recursive: true });
+  return p;
+}
+
+test('runSearch — github source in config produces github:owner/repo:slug result', async () => {
+  const cfg = makeConfigDir();
+  const proj = makeProjectCwd();
+  await writeProjectConfig(proj, {
+    version: 1,
+    sources: [{ type: 'github', owner: 'anthropics', repo: 'example' }],
+  });
+
+  const githubEnumerator: GithubEnumerator = async (source) => [
+    {
+      skill_id: `github:${source.owner}/${source.repo}:my-skill`,
+      name: 'my-skill',
+      installs: 0,
+      source: `${source.owner}/${source.repo}`,
+      slug: 'my-skill',
+      preferred: false,
+    },
+  ];
+  const got = await runSearch('skill', {
+    configDir: cfg,
+    projectCwd: proj,
+    findStrategy: 'api',
+    apiClient: async () => [],
+    auditDecorator: noopAuditDecorator,
+    githubEnumerator,
+    skipCache: true,
+  });
+  const githubEntries = got.results.filter((r) => r.skill_id.startsWith('github:'));
+  assert.strictEqual(githubEntries.length, 1);
+  assert.strictEqual(githubEntries[0]!.skill_id, 'github:anthropics/example:my-skill');
+});
+
+test('runSearch — no github source in config → no github entries', async () => {
+  const cfg = makeConfigDir();
+  const proj = makeProjectCwd();
+  let enumeratorCalled = false;
+  const githubEnumerator: GithubEnumerator = async () => {
+    enumeratorCalled = true;
+    return [];
+  };
+  const got = await runSearch('q', {
+    configDir: cfg,
+    projectCwd: proj,
+    findStrategy: 'api',
+    apiClient: async () => [{ name: 'a', slug: 'a', source: 'o/r', installs: 1 }],
+    auditDecorator: noopAuditDecorator,
+    githubEnumerator,
+    skipCache: true,
+  });
+  assert.strictEqual(enumeratorCalled, false, 'enumerator must not run when no github sources');
+  assert.ok(got.results.every((r) => !r.skill_id.startsWith('github:')));
+});
+
+test('runSearch — preferred github source ranks above skills.sh results', async () => {
+  const cfg = makeConfigDir();
+  const proj = makeProjectCwd();
+  await writeProjectConfig(proj, {
+    version: 1,
+    sources: [{ type: 'github', owner: 'pref', repo: 'src', preferred: true }],
+  });
+  const githubEnumerator: GithubEnumerator = async (source) => [
+    {
+      skill_id: `github:${source.owner}/${source.repo}:topskill`,
+      name: 'topskill',
+      installs: 0,
+      source: `${source.owner}/${source.repo}`,
+      slug: 'topskill',
+      preferred: true,
+    },
+  ];
+  const got = await runSearch('skill', {
+    configDir: cfg,
+    projectCwd: proj,
+    findStrategy: 'api',
+    apiClient: async () => [
+      { name: 'sh-skill', slug: 'sh-skill', source: 'o/r', installs: 1000 },
+    ],
+    auditDecorator: noopAuditDecorator,
+    githubEnumerator,
+    skipCache: true,
+  });
+  assert.strictEqual(got.results[0]!.skill_id, 'github:pref/src:topskill');
+});
+
+test('runSearch — github enumerator results cached on disk', async () => {
+  const cfg = makeConfigDir();
+  const proj = makeProjectCwd();
+  await writeGlobalConfig(cfg, {
+    version: 1,
+    sources: [{ type: 'github', owner: 'cached', repo: 'src' }],
+  });
+  let calls = 0;
+  const githubEnumerator: GithubEnumerator = async (source) => {
+    calls += 1;
+    return [
+      {
+        skill_id: `github:${source.owner}/${source.repo}:foo`,
+        name: 'foo',
+        installs: 0,
+        source: `${source.owner}/${source.repo}`,
+        slug: 'foo',
+        preferred: false,
+      },
+    ];
+  };
+  // First call hits enumerator (not skipped — github cache lives separately
+  // from search cache).
+  await runSearch('foo', {
+    configDir: cfg,
+    projectCwd: proj,
+    findStrategy: 'api',
+    apiClient: async () => [],
+    auditDecorator: noopAuditDecorator,
+    githubEnumerator,
+    skipCache: true, // skip search cache; github cache still active
+  });
+  // Second call should hit the github on-disk cache.
+  await runSearch('foo', {
+    configDir: cfg,
+    projectCwd: proj,
+    findStrategy: 'api',
+    apiClient: async () => [],
+    auditDecorator: noopAuditDecorator,
+    githubEnumerator,
+    skipCache: true,
+  });
+  assert.strictEqual(calls, 1, 'github enumerator should run once thanks to on-disk cache');
+});
