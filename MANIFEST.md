@@ -31,6 +31,7 @@
 | `cacheRead/cacheWrite/cacheAgeSeconds/cachePath` | `server/src/cache.ts` | On-disk JSON cache with TTL + optional schema validation; atomic .tmp+fsync+rename writes; 0700/0600 perms | `node:fs`, `node:fs/promises` | Y |
 | `acquireLock/releaseLock/withLock` (+ `LockTimeoutError`) | `server/src/cache.ts` | Inter-process directory lock (`<dir>.lock` via O_EXCL); 30s default timeout, 50ms backoff; idempotent release; stale-lock cleanup deferred to v1 | `node:fs` | Y |
 | `getAuditData` (+ type re-exports `AuditResponse`, `PartnerAudit`, `SkillAuditData`) | `server/src/audit.ts` | Audit-API client wrapper: cache-first lookup against `${HOTSKILLS_CONFIG_DIR}/cache/audit/<owner>-<repo>.json` (24h TTL); delegates network to vendored `fetchAuditData`; errors logged to `logs/audit-errors.log` | `cache.ts`, vendored `telemetry.ts` | Y |
+| `materializeSkill` (+ `checkGitVersion`, `cacheSkillPath`, `assertSafeSkillId`, `defaultGit`, `MaterializationError`/`GitVersionError`/`UnsafeSkillIdError`) | `server/src/materialize.ts` | Source-typed materialization router per ADR-002 Amendment 1: `skills.sh:` → vendored `blob.ts`; `github:` → `git clone --depth 1 --filter=blob:none --sparse` + `sparse-checkout set <subdir>`; per-skill lock; atomic rename; subprocess args sanitized | `cache.ts`, vendored `blob.ts`, `node:child_process`, `git` >= 2.25 | Y |
 
 ---
 
@@ -59,6 +60,8 @@ Upstream PR tracking (drop vendor in v1): `docs/plans/vendor-upstream-pr-trackin
 | Facade Name | File Path | Wrapped Library/API | Purpose |
 | :--- | :--- | :--- | :--- |
 | `AuditApiClient` | `server/src/audit.ts` | `add-skill.vercel.sh/audit` (via vendored `fetchAuditData`) | Cache-first audit lookups with error logging and no-data sentinel |
+| `BlobMaterializer` | `server/src/materialize.ts` | skills.sh `/api/download/...` (via vendored `blob.ts`) | Fetches SKILL.md tree as a blob snapshot, atomic-rename into cache layout |
+| `GitSparseCheckoutMaterializer` | `server/src/materialize.ts` | `git` CLI (clone + sparse-checkout) | Materializes only the requested skill subdirectory from a github repo |
 
 ---
 
