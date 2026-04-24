@@ -11,6 +11,7 @@ import {
   type HotskillsConfig,
 } from '../config.js';
 import { parseSkillId, SkillIdError } from '../skill-id.js';
+import { resolveConfigDir, resolveProjectCwd } from './_util.js';
 
 interface GateDecision {
   decision: 'allow' | 'block';
@@ -71,14 +72,6 @@ export interface ActivateErrorResult {
   layers?: GateDecision['layers'];
 }
 
-function getProjectCwd(deps: ActivateToolDeps): string {
-  const cwd = deps.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
-  if (!cwd || cwd.trim() === '') {
-    throw new Error('HOTSKILLS_PROJECT_CWD is not set');
-  }
-  return cwd;
-}
-
 /**
  * Append (or replace) an entry in `activated`, dedup'd by skill_id.
  * Returns a new array; never mutates the input.
@@ -126,8 +119,8 @@ export async function runActivate(
   }
 
   // 2. Read configs.
-  const projectCwd = getProjectCwd(deps);
-  const configDir = deps.configDir ?? process.env['HOTSKILLS_CONFIG_DIR']!;
+  const projectCwd = resolveProjectCwd(deps);
+  const configDir = resolveConfigDir(deps);
   let projectConfig = await readProjectConfig(projectCwd);
   const globalConfig = await readGlobalConfig(configDir);
 

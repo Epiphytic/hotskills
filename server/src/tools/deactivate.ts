@@ -3,11 +3,9 @@ import { z } from 'zod';
 import { readProjectConfig, writeProjectConfig, type HotskillsConfig } from '../config.js';
 import { cacheSkillPath } from '../materialize.js';
 import { parseSkillId, SkillIdError } from '../skill-id.js';
+import { resolveConfigDir, resolveProjectCwd, type ToolEnvDeps } from './_util.js';
 
-export interface DeactivateToolDeps {
-  projectCwd?: string;
-  configDir?: string;
-}
+export type DeactivateToolDeps = ToolEnvDeps;
 
 export interface DeactivateInput {
   skill_id: string;
@@ -23,18 +21,6 @@ export interface DeactivateErrorResult {
   error: 'invalid_skill_id' | 'not_activated_in_project' | 'config_write_failed' | 'internal_error';
   message: string;
   expected_format?: string;
-}
-
-function getProjectCwd(deps: DeactivateToolDeps): string {
-  const cwd = deps.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
-  if (!cwd || cwd.trim() === '') throw new Error('HOTSKILLS_PROJECT_CWD is not set');
-  return cwd;
-}
-
-function getConfigDir(deps: DeactivateToolDeps): string {
-  const dir = deps.configDir ?? process.env['HOTSKILLS_CONFIG_DIR'];
-  if (!dir || dir.trim() === '') throw new Error('HOTSKILLS_CONFIG_DIR is not set');
-  return dir;
 }
 
 export async function runDeactivate(
@@ -55,8 +41,8 @@ export async function runDeactivate(
     return { error: 'internal_error', message: (err as Error).message };
   }
 
-  const projectCwd = getProjectCwd(deps);
-  const configDir = getConfigDir(deps);
+  const projectCwd = resolveProjectCwd(deps);
+  const configDir = resolveConfigDir(deps);
   const project = await readProjectConfig(projectCwd);
 
   const activated = project.activated ?? [];

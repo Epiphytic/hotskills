@@ -6,13 +6,11 @@ import {
   readProjectConfig,
   type ActivatedSkill,
 } from '../config.js';
+import { resolveConfigDir, resolveProjectCwd, type ToolEnvDeps } from './_util.js';
 
 export type ListScope = 'project' | 'global' | 'merged';
 
-export interface ListToolDeps {
-  projectCwd?: string;
-  configDir?: string;
-}
+export type ListToolDeps = ToolEnvDeps;
 
 export interface ListInput {
   scope?: ListScope;
@@ -23,25 +21,13 @@ export interface ListResult {
   activated: ActivatedSkill[];
 }
 
-function getProjectCwd(deps: ListToolDeps): string {
-  const cwd = deps.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
-  if (!cwd || cwd.trim() === '') throw new Error('HOTSKILLS_PROJECT_CWD is not set');
-  return cwd;
-}
-
-function getConfigDir(deps: ListToolDeps): string {
-  const dir = deps.configDir ?? process.env['HOTSKILLS_CONFIG_DIR'];
-  if (!dir || dir.trim() === '') throw new Error('HOTSKILLS_CONFIG_DIR is not set');
-  return dir;
-}
-
 export async function runList(
   input: ListInput,
   deps: ListToolDeps = {}
 ): Promise<ListResult> {
   const scope: ListScope = input.scope ?? 'merged';
-  const projectCwd = getProjectCwd(deps);
-  const configDir = getConfigDir(deps);
+  const projectCwd = resolveProjectCwd(deps);
+  const configDir = resolveConfigDir(deps);
 
   const project = await readProjectConfig(projectCwd);
   const global = await readGlobalConfig(configDir);

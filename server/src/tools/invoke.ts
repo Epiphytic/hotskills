@@ -17,11 +17,9 @@ import {
 } from '../config.js';
 import { cacheSkillPath } from '../materialize.js';
 import { parseSkillId, SkillIdError, type ParsedSkillId } from '../skill-id.js';
+import { resolveConfigDir, resolveProjectCwd, type ToolEnvDeps } from './_util.js';
 
-export interface InvokeToolDeps {
-  projectCwd?: string;
-  configDir?: string;
-}
+export type InvokeToolDeps = ToolEnvDeps;
 
 export interface InvokeInput {
   skill_id: string;
@@ -55,18 +53,6 @@ export interface InvokeErrorResult {
     | 'internal_error';
   message: string;
   expected_format?: string;
-}
-
-function getProjectCwd(deps: InvokeToolDeps): string {
-  const cwd = deps.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
-  if (!cwd || cwd.trim() === '') throw new Error('HOTSKILLS_PROJECT_CWD is not set');
-  return cwd;
-}
-
-function getConfigDir(deps: InvokeToolDeps): string {
-  const dir = deps.configDir ?? process.env['HOTSKILLS_CONFIG_DIR'];
-  if (!dir || dir.trim() === '') throw new Error('HOTSKILLS_CONFIG_DIR is not set');
-  return dir;
 }
 
 /**
@@ -138,8 +124,8 @@ export async function runInvoke(
   }
 
   // 2. Verify in merged allow-list.
-  const projectCwd = getProjectCwd(deps);
-  const configDir = getConfigDir(deps);
+  const projectCwd = resolveProjectCwd(deps);
+  const configDir = resolveConfigDir(deps);
   const projectConfig = await readProjectConfig(projectCwd);
   const globalConfig = await readGlobalConfig(configDir);
   const merged = mergeConfigs(globalConfig, projectConfig);
