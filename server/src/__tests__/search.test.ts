@@ -330,6 +330,21 @@ test('runSearch — preferred github source ranks above skills.sh results', asyn
   assert.strictEqual(got.results[0]!.skill_id, 'github:pref/src:topskill');
 });
 
+test('defaultGithubEnumerator — rejects unsafe owner/repo to prevent URL injection (secure)', async () => {
+  const { defaultGithubEnumerator } = await import('../tools/search.js');
+  // We don't actually call fetch — the guard runs first and returns [].
+  const got = await defaultGithubEnumerator(
+    { type: 'github', owner: '../etc', repo: 'passwd' },
+    'q'
+  );
+  assert.deepStrictEqual(got, []);
+  const got2 = await defaultGithubEnumerator(
+    { type: 'github', owner: 'good', repo: 'repo;rm -rf' },
+    'q'
+  );
+  assert.deepStrictEqual(got2, []);
+});
+
 test('runSearch — github enumerator results cached on disk', async () => {
   const cfg = makeConfigDir();
   const proj = makeProjectCwd();

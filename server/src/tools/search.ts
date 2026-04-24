@@ -198,8 +198,21 @@ export type GithubEnumerator = (
  */
 const SCAN_PREFIXES: readonly string[] = ['', 'skills/', '.claude/skills/', '.agents/skills/'];
 
+/**
+ * Same SAFE_NAME alphabet as materialize.ts assertSafeSkillId. Config
+ * schema validates `type: string` for owner/repo but doesn't constrain
+ * characters; without this guard a malicious config could inject `..` or
+ * URL-significant characters into the GitHub Trees API URL.
+ */
+const SAFE_REPO_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const SAFE_REF = /^[A-Za-z0-9._/-]+$/;
+
 export const defaultGithubEnumerator: GithubEnumerator = async (source, query) => {
+  if (!SAFE_REPO_SEGMENT.test(source.owner) || !SAFE_REPO_SEGMENT.test(source.repo)) {
+    return [];
+  }
   const ref = source.branch ?? 'HEAD';
+  if (!SAFE_REF.test(ref)) return [];
   const url = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${ref}?recursive=1`;
   let res: Response;
   try {

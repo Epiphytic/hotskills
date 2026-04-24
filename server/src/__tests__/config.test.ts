@@ -312,6 +312,28 @@ test('readProjectConfig — rejects non-existent projectCwd', async () => {
   );
 });
 
+test('writeProjectConfig — schema rejects unsafe owner/repo in sources (secure)', async () => {
+  const proj = makeProjectCwd();
+  try {
+    await assert.rejects(
+      writeProjectConfig(proj, {
+        version: 1,
+        sources: [{ type: 'github', owner: '../etc', repo: 'passwd' }],
+      }),
+      ConfigSchemaError
+    );
+    await assert.rejects(
+      writeProjectConfig(proj, {
+        version: 1,
+        sources: [{ type: 'github', owner: 'good', repo: 'repo;rm -rf /' }],
+      }),
+      ConfigSchemaError
+    );
+  } finally {
+    rmSync(proj, { recursive: true, force: true });
+  }
+});
+
 test('readProjectConfig — rejects projectCwd that is a file, not a directory', async () => {
   const proj = makeProjectCwd();
   const file = join(proj, 'just-a-file');

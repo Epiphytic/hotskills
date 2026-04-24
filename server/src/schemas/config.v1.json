@@ -53,9 +53,9 @@
             "type": "string",
             "enum": ["github", "git"]
           },
-          "owner": { "type": "string" },
-          "repo": { "type": "string" },
-          "branch": { "type": "string" },
+          "owner": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "repo": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "branch": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
           "preferred": { "type": "boolean" }
         }
       },
