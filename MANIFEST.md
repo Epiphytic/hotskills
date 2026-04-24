@@ -20,7 +20,8 @@
 
 | Module / Function | File Path | Description | Dependencies | Idempotent (Y/N) |
 | :--- | :--- | :--- | :--- | :--- |
-| `MCP server entry` | `server/src/index.ts` | Boots McpServer with stdio transport, registers 6 tools | `@modelcontextprotocol/sdk`, `tools/index.ts` | Y |
+| `MCP server entry` | `server/src/index.ts` | Boots McpServer with stdio transport; validates env via `resolveEnv()` before binding; registers 6 tools | `@modelcontextprotocol/sdk`, `env.ts`, `tools/index.ts` | Y |
+| `resolveEnv / getProjectCwd / getConfigDir` (+ `ConfigError`) | `server/src/env.ts` | Env-var trust boundary: canonicalize + validate HOTSKILLS_PROJECT_CWD and HOTSKILLS_CONFIG_DIR; enforces ${HOME}/.config sandbox unless HOTSKILLS_DEV_OVERRIDE covers the path | `node:fs`, `node:os`, `node:path` | Y |
 | `registerTools()` | `server/src/tools/index.ts` | Registers all 6 hotskills tools on a McpServer | per-tool `register*` modules | Y |
 | `registerSearch/Activate/Deactivate/List/Invoke/Audit()` | `server/src/tools/{search,activate,deactivate,list,invoke,audit}.ts` | Phase-1 stub handlers returning `{stub: true}`; full implementations land in Phases 2–4 | `zod`, MCP SDK | Y |
 | `validateConfig()` / `validateState()` | `server/src/schemas/index.ts` | ajv-compiled validators for config.v1 and state.v1 schemas | `ajv`, `ajv-formats` | Y |
@@ -48,6 +49,7 @@ attribution and per-file modification log at `vendor/vercel-skills/ATTRIBUTION.m
 
 Sync state: SHA `bc21a37a12b90fcb5aec051c91baf5b227b704b1` (tag v1.5.1), 2026-04-23.
 Drift check workflow tracked in beads task `hotskills-35o`.
+Upstream PR tracking (drop vendor in v1): `docs/plans/vendor-upstream-pr-tracking.md`.
 
 ---
 

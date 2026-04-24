@@ -1,15 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.join(__dirname, '../index.js');
 
+// Shared temp dir for the server's env-var validation (env.ts). We create it
+// once per test run, hand it to every spawned server, and clean up on exit.
+const SANDBOX_ROOT = mkdtempSync(path.join(tmpdir(), 'hotskills-mcp-test-'));
+const PROJECT_CWD = path.join(SANDBOX_ROOT, 'project');
+const CONFIG_DIR = path.join(SANDBOX_ROOT, '.config', 'hotskills');
+const DEV_OVERRIDE = SANDBOX_ROOT;
+import { mkdirSync } from 'node:fs';
+mkdirSync(PROJECT_CWD, { recursive: true });
+process.on('exit', () => rmSync(SANDBOX_ROOT, { recursive: true, force: true }));
+
+const SERVER_ENV = {
+  ...process.env,
+  HOTSKILLS_PROJECT_CWD: PROJECT_CWD,
+  HOTSKILLS_CONFIG_DIR: CONFIG_DIR,
+  HOTSKILLS_DEV_OVERRIDE: DEV_OVERRIDE,
+};
+
 function runMcpSession(messages: object[], expectedIds: number[]): Promise<Map<number, object>> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('node', [SERVER_PATH], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('node', [SERVER_PATH], { stdio: ['pipe', 'pipe', 'pipe'], env: SERVER_ENV });
     const byId = new Map<number, object>();
     let buf = '';
     let stderr = '';
