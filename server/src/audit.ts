@@ -77,6 +77,9 @@ async function logAuditError(
   const path = logFilePath();
   try {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    // JSON.stringify escapes \n in string values, preserving the
+    // one-line-per-record invariant of this JSONL log file. Tested in
+    // audit.test.ts (hotskills-gu7) — do not bypass.
     const line =
       JSON.stringify({
         ts: new Date().toISOString(),

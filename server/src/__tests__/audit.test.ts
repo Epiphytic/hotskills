@@ -146,6 +146,47 @@ test('getAuditData — timeout treated as no-data (AbortError from vendored fn)'
   }
 });
 
+test('logAuditError lines never contain raw newlines in fields (hotskills-gu7)', async () => {
+  // JSON.stringify escapes \n in string values, preserving the
+  // one-line-per-record invariant of the JSONL log file. This test pins
+  // that behavior so a future refactor (e.g., switching to a custom
+  // serializer) cannot regress it silently.
+  clearCache();
+  const evilParsed = {
+    source: 'skills.sh',
+    owner: 'vercel-labs\nINJECTED',
+    repo: 'agent-skills\nMORE',
+    slug: 'react\n{"fake":"line"}',
+  };
+  installFetch(async () => new Response('', { status: 500 }));
+  try {
+    const { getAuditData } = await import('../audit.js');
+    await getAuditData(evilParsed);
+    const logPath = join(process.env['HOTSKILLS_CONFIG_DIR']!, 'logs', 'audit-errors.log');
+    const log = readFileSync(logPath, 'utf8');
+    // Find the line that mentions our injected values. Each line should be
+    // a single JSON object — so splitting on '\n' should yield one entry
+    // per actual log record.
+    const lines = log.trimEnd().split('\n');
+    for (const line of lines) {
+      // Each line must parse as valid JSON.
+      const parsed = JSON.parse(line);
+      assert.ok(typeof parsed === 'object' && parsed !== null);
+    }
+    // Find our line specifically and confirm escaped newlines.
+    const our = lines.find((l) => l.includes('INJECTED') || l.includes('MORE'));
+    if (our) {
+      // The line itself does NOT contain a literal \n (that's split-by) —
+      // but the field value should round-trip through JSON.parse with the
+      // newline preserved as part of the string.
+      const parsed = JSON.parse(our);
+      assert.ok(String(parsed.skill_id).includes('\n'), 'parsed value has the newline');
+    }
+  } finally {
+    restoreFetch();
+  }
+});
+
 test('getAuditData — integration round-trip against a local HTTP server', async () => {
   clearCache();
   let server: Server | null = null;
