@@ -27,6 +27,8 @@
 | `phase0-api-verify.sh` | `scripts/phase0-api-verify.sh` | RISK-FIRST CI smoke-test for skills.sh `/api/search` and add-skill.vercel.sh `/audit` | `curl`, `node` | Y |
 | `phase0-npx-verify.sh` | `scripts/phase0-npx-verify.sh` | RISK-FIRST CI smoke-test for `skills add --target` (currently fails: flag absent in v1.5.1; resolution tracked in beads `hotskills-ns3`) | `npx`, `skills` CLI | Y |
 | `sync-vendor.mjs` | `server/scripts/sync-vendor.mjs` | Build prebuild step: copies `vendor/vercel-skills/*.ts` into `server/src/vendor/vercel-skills/` so tsc compiles the vendored sources without widening rootDir | `node:fs` | Y |
+| `cacheRead/cacheWrite/cacheAgeSeconds/cachePath` | `server/src/cache.ts` | On-disk JSON cache with TTL + optional schema validation; atomic .tmp+fsync+rename writes; 0700/0600 perms | `node:fs`, `node:fs/promises` | Y |
+| `acquireLock/releaseLock/withLock` (+ `LockTimeoutError`) | `server/src/cache.ts` | Inter-process directory lock (`<dir>.lock` via O_EXCL); 30s default timeout, 50ms backoff; idempotent release; stale-lock cleanup deferred to v1 | `node:fs` | Y |
 
 ---
 
