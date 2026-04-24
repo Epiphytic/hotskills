@@ -108,18 +108,27 @@ test('tools/list returns exactly 6 hotskills tools', async () => {
   }
 });
 
-test('hotskills.search stub returns {stub: true}', async () => {
+test('hotskills.search returns {results, cached, cache_age_seconds} (real handler)', async () => {
   const responses = await runMcpSession(
     [INIT_MSG, INITIALIZED_NOTIF, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'hotskills.search', arguments: { query: 'react' } } }],
     [1, 3]
   );
 
-  const r = responses.get(3) as { result?: { content?: Array<{ type: string; text: string }> }; error?: object } | undefined;
+  const r = responses.get(3) as { result?: { content?: Array<{ type: string; text: string }>; isError?: boolean }; error?: object } | undefined;
   assert.ok(r, 'call response received');
-  assert.ok(!r?.error, `unexpected error: ${JSON.stringify(r?.error)}`);
+  // The handler runs against a sandboxed cache with no network; the
+  // upstream skills.sh API may or may not respond from this sandbox.
+  // What we assert is the response *shape* (not the result count).
   const text = (r?.result?.content ?? [])[0]?.text;
   assert.ok(text, 'content[0].text present');
-  assert.deepStrictEqual(JSON.parse(text), { stub: true });
+  const parsed = JSON.parse(text);
+  if (r?.result?.isError) {
+    assert.ok(parsed.error, `error response carries an error code: ${text}`);
+  } else {
+    assert.ok(Array.isArray(parsed.results), 'response has results array');
+    assert.ok(typeof parsed.cached === 'boolean', 'response has cached flag');
+    assert.ok(parsed.cache_age_seconds === null || typeof parsed.cache_age_seconds === 'number');
+  }
 });
 
 test('hotskills.search Zod validation rejects missing query', async () => {

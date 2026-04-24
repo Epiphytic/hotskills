@@ -23,7 +23,8 @@
 | `MCP server entry` | `server/src/index.ts` | Boots McpServer with stdio transport; validates env via `resolveEnv()` before binding; registers 6 tools | `@modelcontextprotocol/sdk`, `env.ts`, `tools/index.ts` | Y |
 | `resolveEnv / getProjectCwd / getConfigDir` (+ `ConfigError`) | `server/src/env.ts` | Env-var trust boundary: canonicalize + validate HOTSKILLS_PROJECT_CWD and HOTSKILLS_CONFIG_DIR; enforces ${HOME}/.config sandbox unless HOTSKILLS_DEV_OVERRIDE covers the path | `node:fs`, `node:os`, `node:path` | Y |
 | `registerTools()` | `server/src/tools/index.ts` | Registers all 6 hotskills tools on a McpServer | per-tool `register*` modules | Y |
-| `registerSearch/Activate/Deactivate/List/Invoke/Audit()` | `server/src/tools/{search,activate,deactivate,list,invoke,audit}.ts` | Phase-1 stub handlers returning `{stub: true}`; full implementations land in Phases 2–4 | `zod`, MCP SDK | Y |
+| `registerSearch()` (+ `runSearch`, `resolveFindStrategy`) | `server/src/tools/search.ts` | Real handler: cache-first 1h TTL, dispatches to vendored `searchSkillsAPI` (api) or `npx skills find` shell-out (cli); merges audit data; gate_status placeholder until Phase 4 | `cache.ts`, `audit.ts`, vendored `find.ts` | Y |
+| `registerActivate/Deactivate/List/Invoke/Audit()` | `server/src/tools/{activate,deactivate,list,invoke,audit}.ts` | Phase-1 stub handlers returning `{stub: true}`; full implementations land in Phases 3–4 | `zod`, MCP SDK | Y |
 | `validateConfig()` / `validateState()` | `server/src/schemas/index.ts` | ajv-compiled validators for config.v1 and state.v1 schemas | `ajv`, `ajv-formats` | Y |
 | `phase0-api-verify.sh` | `scripts/phase0-api-verify.sh` | RISK-FIRST CI smoke-test for skills.sh `/api/search` and add-skill.vercel.sh `/audit` | `curl`, `node` | Y |
 | `phase0-npx-verify.sh` | `scripts/phase0-npx-verify.sh` | RISK-FIRST CI smoke-test for `skills add --target` (currently fails: flag absent in v1.5.1; resolution tracked in beads `hotskills-ns3`) | `npx`, `skills` CLI | Y |
@@ -60,6 +61,8 @@ Upstream PR tracking (drop vendor in v1): `docs/plans/vendor-upstream-pr-trackin
 | Facade Name | File Path | Wrapped Library/API | Purpose |
 | :--- | :--- | :--- | :--- |
 | `AuditApiClient` | `server/src/audit.ts` | `add-skill.vercel.sh/audit` (via vendored `fetchAuditData`) | Cache-first audit lookups with error logging and no-data sentinel |
+| `SkillsApiSearch` | `server/src/tools/search.ts` (via vendored `find.ts`) | skills.sh `/api/search?q=` | Search API for `find_strategy` `api`/`auto` |
+| `NpxSkillsCli` | `server/src/tools/search.ts` | `npx skills find` (optional) | Search CLI shell-out for `find_strategy` `cli`/`auto` |
 | `BlobMaterializer` | `server/src/materialize.ts` | skills.sh `/api/download/...` (via vendored `blob.ts`) | Fetches SKILL.md tree as a blob snapshot, atomic-rename into cache layout |
 | `GitSparseCheckoutMaterializer` | `server/src/materialize.ts` | `git` CLI (clone + sparse-checkout) | Materializes only the requested skill subdirectory from a github repo |
 

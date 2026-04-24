@@ -131,6 +131,17 @@
         "audit_ttl_seconds": { "type": "integer", "minimum": 0, "default": 86400 },
         "skills_ttl_seconds": { "type": "integer", "minimum": 0, "default": 604800 }
       }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "find_strategy": {
+          "type": "string",
+          "enum": ["cli", "api", "auto"],
+          "default": "auto"
+        }
+      }
     }
   }
 }
