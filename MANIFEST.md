@@ -30,6 +30,7 @@
 | `sync-vendor.mjs` | `server/scripts/sync-vendor.mjs` | Build prebuild step: copies `vendor/vercel-skills/*.ts` into `server/src/vendor/vercel-skills/` so tsc compiles the vendored sources without widening rootDir | `node:fs` | Y |
 | `cacheRead/cacheWrite/cacheAgeSeconds/cachePath` | `server/src/cache.ts` | On-disk JSON cache with TTL + optional schema validation; atomic .tmp+fsync+rename writes; 0700/0600 perms | `node:fs`, `node:fs/promises` | Y |
 | `acquireLock/releaseLock/withLock` (+ `LockTimeoutError`) | `server/src/cache.ts` | Inter-process directory lock (`<dir>.lock` via O_EXCL); 30s default timeout, 50ms backoff; idempotent release; stale-lock cleanup deferred to v1 | `node:fs` | Y |
+| `getAuditData` (+ type re-exports `AuditResponse`, `PartnerAudit`, `SkillAuditData`) | `server/src/audit.ts` | Audit-API client wrapper: cache-first lookup against `${HOTSKILLS_CONFIG_DIR}/cache/audit/<owner>-<repo>.json` (24h TTL); delegates network to vendored `fetchAuditData`; errors logged to `logs/audit-errors.log` | `cache.ts`, vendored `telemetry.ts` | Y |
 
 ---
 
@@ -57,7 +58,7 @@ Upstream PR tracking (drop vendor in v1): `docs/plans/vendor-upstream-pr-trackin
 
 | Facade Name | File Path | Wrapped Library/API | Purpose |
 | :--- | :--- | :--- | :--- |
-| *(Phase 2 facades added here)* | | | |
+| `AuditApiClient` | `server/src/audit.ts` | `add-skill.vercel.sh/audit` (via vendored `fetchAuditData`) | Cache-first audit lookups with error logging and no-data sentinel |
 
 ---
 
