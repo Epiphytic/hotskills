@@ -127,17 +127,57 @@ export function getProjectCwd(env: NodeJS.ProcessEnv = process.env): string {
  * HOTSKILLS_DEV_OVERRIDE names a directory under which HOTSKILLS_CONFIG_DIR
  * is ALSO permitted to resolve (useful for tests and XDG-override users).
  */
+/**
+ * Locate a usable HOME path, refusing system-root values that would let
+ * any user-writable HOTSKILLS_CONFIG_DIR resolve under a privileged
+ * sandbox root. If both `env.HOME` and `homedir()` resolve to a system
+ * root, we throw rather than silently widen the sandbox.
+ *
+ * Allowed values: any absolute path that is NOT '/', '/root', or empty.
+ */
+function resolveHomeOrThrow(env: NodeJS.ProcessEnv): string {
+  const candidates: Array<{ source: string; value: string }> = [];
+  if (env['HOME'] && env['HOME'].trim() !== '') {
+    candidates.push({ source: 'HOME', value: env['HOME'] });
+  }
+  const fromOs = homedir();
+  if (fromOs && fromOs.trim() !== '') {
+    candidates.push({ source: 'os.homedir()', value: fromOs });
+  }
+  for (const { value } of candidates) {
+    const resolved = resolve(value);
+    if (resolved === '' || resolved === '/' || resolved === '/root') continue;
+    return resolved;
+  }
+  throw new ConfigError(
+    'HOME',
+    'home directory resolves to a system root (/, /root) or is empty; ' +
+      'a user-writable hotskills config dir cannot be derived from this',
+    'set HOME explicitly to a user-owned directory, or set HOTSKILLS_DEV_OVERRIDE'
+  );
+}
+
 export function getConfigDir(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env['HOME'] && env['HOME'].trim() !== '' ? env['HOME'] : homedir();
+  // Allow HOTSKILLS_DEV_OVERRIDE alone to satisfy the home requirement —
+  // CI containers often run as root with HOME=/root and rely on the dev
+  // override to land in a tmp tree.
+  const devOverrideRaw = env['HOTSKILLS_DEV_OVERRIDE'];
+  const devOverride =
+    devOverrideRaw && devOverrideRaw.trim() !== '' ? canonicalize(devOverrideRaw) : null;
+
+  let home: string;
+  try {
+    home = resolveHomeOrThrow(env);
+  } catch (err) {
+    if (devOverride === null) throw err;
+    // Use the dev override as a synthetic home so sandboxRoot lives there.
+    home = devOverride;
+  }
   const defaultRoot = resolve(home, '.config', 'hotskills');
   const sandboxRoot = resolve(home, '.config');
 
   const raw = env['HOTSKILLS_CONFIG_DIR'];
   const effective = raw && raw.trim() !== '' ? canonicalize(raw) : defaultRoot;
-
-  const devOverrideRaw = env['HOTSKILLS_DEV_OVERRIDE'];
-  const devOverride =
-    devOverrideRaw && devOverrideRaw.trim() !== '' ? canonicalize(devOverrideRaw) : null;
 
   const inSandbox = isChildOf(effective, sandboxRoot);
   const inDevOverride = devOverride !== null && isChildOf(effective, devOverride);
