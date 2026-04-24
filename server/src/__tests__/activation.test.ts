@@ -196,12 +196,6 @@ test('activateSkill — concurrent calls produce a single materialization (lock)
     let materializeCalls = 0;
     const slow = async (_p: ParsedSkillId, _o: unknown) => {
       materializeCalls += 1;
-      // Simulate non-trivial work; both racers should serialize on the
-      // post-materialize lock, but the fast-path manifest read should
-      // rescue the second from running materialize again — except the
-      // fast-path runs BEFORE the first impl finishes. Both will call
-      // materialize. That's the documented semantics; the lock guarantees
-      // the manifest write doesn't race.
       mkdirSync(target, { recursive: true, mode: 0o700 });
       writeFileSync(join(target, 'SKILL.md'), '# Race\n');
       await new Promise((r) => setTimeout(r, 50));
@@ -211,15 +205,21 @@ test('activateSkill — concurrent calls produce a single materialization (lock)
       activateSkill(PARSED, AUDIT, { configDir: cfg, materializeImpl: slow }),
       activateSkill(PARSED, AUDIT, { configDir: cfg, materializeImpl: slow }),
     ]);
-    // Both succeed; both have valid manifests. The second writer overwrites
-    // the manifest atomically — both r1.manifest.content_sha256 and
-    // r2.manifest.content_sha256 must match the file on disk.
+    // Per hotskills-w9g: the outer <target>.activate.lock now serializes
+    // the full activation flow. The loser blocks on lock acquire, observes
+    // the winner's manifest in the fast-path read, and short-circuits with
+    // reused: true — exactly one materialize call.
+    assert.strictEqual(materializeCalls, 1, 'outer activate-lock must serialize: only one materialize call');
+    // Exactly one of (r1, r2) is the fresh writer; the other is the reuser.
+    const reusedFlags = [r1.reused, r2.reused].sort();
+    assert.deepStrictEqual(reusedFlags, [false, true], 'one reused, one fresh');
+    // Both manifests share the same content_sha256.
+    assert.strictEqual(r1.manifest.content_sha256, r2.manifest.content_sha256);
+    // Manifest on disk matches.
     const onDisk = JSON.parse(
       readFileSync(join(target, '.hotskills-manifest.json'), 'utf8')
     );
-    assert.ok(r1.manifest.content_sha256 === onDisk.content_sha256 ||
-              r2.manifest.content_sha256 === onDisk.content_sha256);
-    assert.ok(materializeCalls >= 1);
+    assert.strictEqual(onDisk.content_sha256, r1.manifest.content_sha256);
   } finally {
     rmSync(cfg, { recursive: true, force: true });
   }

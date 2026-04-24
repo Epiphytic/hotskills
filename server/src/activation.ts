@@ -19,7 +19,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, relative, sep as pathSep } from 'node:path';
 import { type SkillAuditData } from './audit.js';
-import { cacheWrite, withLock } from './cache.js';
+import { acquireLock, cacheWrite, releaseLock } from './cache.js';
 import {
   cacheSkillPath,
   defaultGit,
@@ -191,6 +191,20 @@ function assertSkillMdExists(target: string, parsed: ParsedSkillId): void {
  * Idempotent: a second call with the same materialized content (and an
  * existing valid manifest with a matching content_sha256) returns the
  * existing manifest with `reused: true` and skips re-materialization.
+ *
+ * Concurrency model (closes hotskills-w9g): the entire activation flow
+ * (fast-path manifest check → materialize → manifest write) runs under
+ * a per-skill `<target>.activate.lock` file (a SEPARATE lock from the
+ * `<target>.lock` that materialize.ts uses internally for its blob/git
+ * IO). This means a concurrent loser blocks on the outer activate-lock,
+ * observes the winner's manifest in the fast-path read, and short-
+ * circuits with `reused: true` — no second materialize call.
+ *
+ * Two-lock design rationale: the existing `<target>.lock` is acquired
+ * inside materialize for the duration of blob/git writes. We cannot
+ * reuse it (the O_EXCL primitive is non-reentrant — taking it twice in
+ * the same process would deadlock). The `<target>.activate.lock` lives
+ * one level out and is held across the whole activation.
  */
 export async function activateSkill(
   parsed: ParsedSkillId,
@@ -201,72 +215,54 @@ export async function activateSkill(
   const target = cacheSkillPath(parsed, configDir);
   const skillId = `${parsed.source}:${parsed.owner}/${parsed.repo}:${parsed.slug}`;
 
-  // Hold the lock for the whole activation: the materialize step takes the
-  // same lock internally (it's reentrant via filesystem semantics — each
-  // acquire creates a new O_EXCL file, so we must NOT call materialize
-  // while holding the lock from outside). Instead: do existing-manifest
-  // check + return-fast under a quick lock; release; then call materialize
-  // (which re-acquires); then re-acquire to write the manifest.
-  //
-  // Practical approach: skip the optimistic fast-path lock and just do
-  //   1. fast-path check (no lock — race-tolerant since we re-validate later)
-  //   2. materialize (lock inside)
-  //   3. write manifest under lock
-  //
-  // The fast-path race is benign: if two concurrent activators both decide
-  // to materialize, the second blocks on materialize's lock and observes
-  // the fully-materialized + manifested tree on release; its own
-  // materialize call would succeed but produce identical content — and our
-  // post-materialize manifest write will rewrite an identical manifest.
+  // Outer activation lock — distinct file from materialize's <target>.lock.
+  const activateLockDir = `${target}.activate`;
+  const handle = await acquireLock(activateLockDir, opts.lockTimeoutMs);
+  try {
+    // ─── 1. Fast-path: existing manifest with matching content sha ───
+    const existing = await readExistingManifest(target);
+    if (existing) {
+      let computed: string;
+      try {
+        computed = computeContentSha(target);
+      } catch {
+        computed = '';
+      }
+      if (computed && computed === existing.content_sha256) {
+        // Per ADR-003 the audit snapshot is frozen at activation time.
+        // Reuse semantics return the original.
+        return { skill_id: skillId, path: target, manifest: existing, reused: true };
+      }
+    }
 
-  // ─── 1. Fast-path: existing manifest with matching content sha ───
-  const existing = await readExistingManifest(target);
-  if (existing) {
-    let computed: string;
-    try {
-      computed = computeContentSha(target);
-    } catch {
-      computed = '';
-    }
-    if (computed && computed === existing.content_sha256) {
-      // Update audit_snapshot freshness only? Per ADR-003 the snapshot is
-      // frozen at activation time. Reuse semantics return the original.
-      return { skill_id: skillId, path: target, manifest: existing, reused: true };
-    }
+    // ─── 2. Materialize (acquires its own inner <target>.lock internally) ───
+    const materializeImpl = opts.materializeImpl ?? runMaterialize;
+    const matOpts: MaterializeOptions = {};
+    if (opts.configDir !== undefined) matOpts.configDir = opts.configDir;
+    if (opts.git !== undefined) matOpts.git = opts.git;
+    if (opts.blobInstall !== undefined) matOpts.blobInstall = opts.blobInstall;
+    if (opts.lockTimeoutMs !== undefined) matOpts.lockTimeoutMs = opts.lockTimeoutMs;
+    const result = await materializeImpl(parsed, matOpts);
+    assertSkillMdExists(result.path, parsed);
+
+    // ─── 3. Write manifest (still under outer activate-lock) ───
+    const contentSha = computeContentSha(result.path);
+    const manifest: ActivationManifest = {
+      source: parsed.source,
+      owner: parsed.owner,
+      repo: parsed.repo,
+      slug: parsed.slug,
+      version: result.sha ?? 'unknown',
+      content_sha256: contentSha,
+      audit_snapshot: auditSnapshot,
+      activated_at: new Date().toISOString(),
+    };
+    cacheWrite(join(result.path, MANIFEST_NAME), manifest);
+
+    return { skill_id: skillId, path: target, manifest, reused: false };
+  } finally {
+    releaseLock(handle);
   }
-
-  // ─── 2. Materialize ───
-  const materializeImpl = opts.materializeImpl ?? runMaterialize;
-  const matOpts: MaterializeOptions = {};
-  if (opts.configDir !== undefined) matOpts.configDir = opts.configDir;
-  if (opts.git !== undefined) matOpts.git = opts.git;
-  if (opts.blobInstall !== undefined) matOpts.blobInstall = opts.blobInstall;
-  if (opts.lockTimeoutMs !== undefined) matOpts.lockTimeoutMs = opts.lockTimeoutMs;
-  const result = await materializeImpl(parsed, matOpts);
-  assertSkillMdExists(result.path, parsed);
-
-  // ─── 3. Write manifest under lock ───
-  const manifest = await withLock(
-    target,
-    async () => {
-      const contentSha = computeContentSha(result.path);
-      const m: ActivationManifest = {
-        source: parsed.source,
-        owner: parsed.owner,
-        repo: parsed.repo,
-        slug: parsed.slug,
-        version: result.sha ?? 'unknown',
-        content_sha256: contentSha,
-        audit_snapshot: auditSnapshot,
-        activated_at: new Date().toISOString(),
-      };
-      cacheWrite(join(result.path, MANIFEST_NAME), m);
-      return m;
-    },
-    opts.lockTimeoutMs
-  );
-
-  return { skill_id: skillId, path: target, manifest, reused: false };
 }
 
 // Re-export materialize's defaultGit so tools can inject test runners
