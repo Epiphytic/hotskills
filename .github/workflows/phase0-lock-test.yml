@@ -1,0 +1,33 @@
+name: phase0-lock-test
+
+on:
+  push:
+    branches: [main, "brains/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lock-test:
+    name: Lock primitive concurrent acquire (5 workers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+
+      - name: Build
+        working-directory: server
+        run: npm run build
+
+      - name: Run lock primitive concurrent test
+        run: bash scripts/phase0-lock-test.sh
