@@ -287,3 +287,25 @@
 - **Touches:** `README.md`
 - **Acceptance:** A developer who has not read the ADRs can install and activate their first skill using only the README; the troubleshooting section addresses all failure modes from ADR-001 §11 ("Failure modes + degradation" in the synthesis doc).
 - **Depends on:** Task 6.4
+
+### Task 6.6: E2E — claude --plugin-dir keyword→activation flow
+- **Outcome:** `scripts/e2e-claude-keyword.sh` orchestrates a real claude-launched activation flow against the live plugin. For each of ≥5 keyword fixtures (in `test/fixtures/keyword-expectations.json`): mktemp -d a fresh empty git repo; launch `claude --plugin-dir <hotskills-checkout>` in non-interactive mode; prime with `/hotskills-setup` (defaults: no whitelist, opportunistic off); send a scripted prompt that invokes `/hotskills` with the keyword; capture the tool-call trace (Claude session log or MCP-server-side log via `HOTSKILLS_DEBUG`); assert (a) `hotskills.search` was called with a query derived from the prompt, (b) returned ranked list contains the fixture's `must-include` skill IDs (rank-jitter tolerated), (c) `hotskills.activate` was called with the expected skill IDs, (d) materialized cache contains SKILL.md per activated skill, (e) `.hotskills/config.json` lists them. Tear down on pass/fail.
+- **Touches:** `scripts/e2e-claude-keyword.sh`, `test/fixtures/keyword-expectations.json`, `.github/workflows/ci.yml` (add e2e-claude job)
+- **Acceptance:** All ≥5 fixtures pass (against live skills.sh API or recorded fixture if rate-limited in CI); deliberate-wrong fixture exits non-zero with a structured diagnostic naming the missing skill; no leftover temp dirs after pass or fail. Beads: `hotskills-056`.
+- **Depends on:** Task 5.3 (`/hotskills-setup`), Task 5.4 (`/hotskills`), Task 6.2 (cross-component integration)
+
+### Task 6.7: E2E — claude --plugin-dir configuration-options matrix
+- **Outcome:** `scripts/e2e-claude-config.sh` exercises each documented config option end-to-end via real claude sessions, validating documented behavior. For each scenario in `test/fixtures/config-scenarios/`: mktemp -d fresh repo, write `~/.config/hotskills/config.json` (via `HOTSKILLS_CONFIG_DIR` override pointing at a temp location) and/or `.hotskills/config.json`, launch `claude --plugin-dir <hotskills-checkout>`, run scripted prompt, assert observed behavior. Scenarios:
+  1. `mode: "interactive"` (default) — `/hotskills` presents list and waits.
+  2. `mode: "auto"` — top gate-passing result auto-activates inline.
+  3. `mode: "opportunistic"` — first prompt after compaction triggers `hotskills.search` automatically (simulate via `SessionStart` hook fire).
+  4. `security.installs_min` override — 100k blocks 5k-install skill, allows 1M-install skill.
+  5. `security.risk_max` override — `low` blocks medium-risk skill; `high` allows it.
+  6. `whitelist.orgs` — org skill bypasses install+audit gates; activation logged to `whitelist-activations.log`.
+  7. `whitelist.repos` — same scoped to a single owner/repo.
+  8. `sources` with `preferred: true` — preferred github source wins ordering and bypasses install threshold.
+  9. `discovery.find_strategy: "api"` — search works via skills.sh `/api/search?q=` even with `npx` absent.
+  10. Per-project override of global — global `installs_min: 10000`, project `installs_min: 1000` → project wins for that project; other projects still see 10000.
+- **Touches:** `scripts/e2e-claude-config.sh`, `test/fixtures/config-scenarios/*.json`, `.github/workflows/ci.yml`
+- **Acceptance:** All 10 scenarios pass; each has a deliberate-wrong-config negative test that exits non-zero with a diagnostic naming the failing assertion; teardown leaves no stale state in temp repo or in `HOTSKILLS_CONFIG_DIR` (which MUST be a temp path for the test, never `~/.config/hotskills`). Beads: `hotskills-q7s`.
+- **Depends on:** Task 5.3 (`/hotskills-setup`), Task 5.4 (`/hotskills`), Task 6.2 (cross-component integration)
