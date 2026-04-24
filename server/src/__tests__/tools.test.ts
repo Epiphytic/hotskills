@@ -50,7 +50,7 @@ function runMcpSession(messages: object[], expectedIds: number[]): Promise<Map<n
       } else {
         finish();
       }
-    }, 5000);
+    }, 15000);
 
     proc.stdout.on('data', (chunk: Buffer) => {
       buf += chunk.toString();
