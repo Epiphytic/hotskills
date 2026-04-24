@@ -78,7 +78,11 @@ interface CliResult {
  */
 async function searchViaCli(query: string, timeoutMs = 30_000): Promise<CliResult[]> {
   return new Promise((resolveOuter) => {
-    const proc = spawn('npx', ['skills', 'find', query], {
+    // Defense in depth: even though spawn never goes through a shell, a
+    // query starting with '-' could be parsed by `skills find` as a flag.
+    // Push a `--` separator so all positional args after it are treated
+    // as the query string verbatim.
+    const proc = spawn('npx', ['skills', 'find', '--', query], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const timer = setTimeout(() => {

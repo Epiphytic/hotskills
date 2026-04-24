@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -262,6 +262,39 @@ test('materializeSkill github path emits remediation when git is missing', async
         { configDir: cfg, git: fakeGit }
       ),
     GitVersionError
+  );
+});
+
+test('materializeSkill github path rejects a clone containing symlinks (security)', async () => {
+  const cfg = makeConfigDir();
+  const parsed: ParsedSkillId = {
+    source: 'github',
+    owner: 'evil',
+    repo: 'skills',
+    slug: 'demo',
+  };
+  const fakeGit: GitRunner = async (args) => {
+    if (args[0] === '--version') return 'git version 2.40.0\n';
+    if (args[0] === 'clone') {
+      const target = args[args.length - 1]!;
+      mkdirSync(target, { recursive: true });
+      return '';
+    }
+    if (args[0] === '-C' && args[2] === 'sparse-checkout' && args[3] === 'set') {
+      const repoDir = args[1]!;
+      const skillDir = join(repoDir, 'skills', 'demo');
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: demo\n---\nbody');
+      // Plant an evil symlink → /etc/passwd
+      symlinkSync('/etc/passwd', join(skillDir, 'pwned'));
+      return '';
+    }
+    if (args[0] === '-C' && args[2] === 'rev-parse') return 'abc\n';
+    return '';
+  };
+  await assert.rejects(
+    () => materializeSkill(parsed, { configDir: cfg, git: fakeGit }),
+    /unsafe symlink/
   );
 });
 

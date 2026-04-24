@@ -83,6 +83,21 @@ test('cacheRead returns parsed value when within ttl', async () => {
   }
 });
 
+test('cacheRead returns null when file exceeds MAX_CACHE_BYTES (DoS guard)', async () => {
+  const dir = makeTempDir();
+  try {
+    const path = join(dir, 'huge.json');
+    // Write 17 MiB (above the 16 MiB hard limit) of valid-looking JSON.
+    // Use a single big string to keep the test fast.
+    const big = '"' + 'a'.repeat(17 * 1024 * 1024) + '"';
+    cacheWrite(path, big);
+    const got = await cacheRead(path, 60);
+    assert.strictEqual(got, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('cacheRead returns null when validator throws (treated as schema-mismatch)', async () => {
   const dir = makeTempDir();
   try {

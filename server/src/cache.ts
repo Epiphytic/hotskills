@@ -51,6 +51,13 @@ const DEFAULT_LOCK_TIMEOUT_MS = 30_000;
 const LOCK_RETRY_INTERVAL_MS = 50;
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
+/**
+ * Maximum cache-file size we'll attempt to parse. The cache is
+ * filesystem-trusted (we wrote it under 0700 dirs), but a corrupted
+ * or attacker-crafted file shouldn't be able to OOM the server.
+ * 16 MiB is well above the largest legitimate audit/search payload.
+ */
+const MAX_CACHE_BYTES = 16 * 1024 * 1024;
 
 // ─── Helpers ───
 
@@ -93,6 +100,8 @@ export async function cacheRead<T = unknown>(
 
   const ageSeconds = (Date.now() - stat.mtimeMs) / 1000;
   if (ageSeconds > ttlSeconds) return null; // stale
+
+  if (stat.size > MAX_CACHE_BYTES) return null; // corrupted / attacker-crafted
 
   let raw: string;
   try {

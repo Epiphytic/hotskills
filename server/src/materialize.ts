@@ -26,7 +26,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync, type Dirent } from 'node:fs';
 import { writeFile, mkdir as mkdirP } from 'node:fs/promises';
 import { dirname, join, resolve as pathResolve, sep as pathSep } from 'node:path';
 import { acquireLock, releaseLock } from './cache.js';
@@ -297,6 +297,35 @@ function candidateSubdirs(slug: string): string[] {
   return [slug, `skills/${slug}`, `.claude/skills/${slug}`, `.agents/skills/${slug}`];
 }
 
+/**
+ * Walk a directory tree and reject if it contains any symlinks. A
+ * malicious skill repo could ship `secret -> /etc/passwd`; after
+ * materialization the symlink would point outside the cache and a
+ * downstream model `Read` of the SKILL would dereference into a
+ * privileged file.
+ */
+function assertNoSymlinks(root: string): void {
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new MaterializationError(
+          `unsafe symlink detected at ${full}; refusing to materialize a skill containing symlinks`
+        );
+      }
+      if (entry.isDirectory()) stack.push(full);
+    }
+  }
+}
+
 async function materializeGithub(
   parsed: ParsedSkillId,
   target: string,
@@ -343,7 +372,10 @@ async function materializeGithub(
     // 4. Capture sha for the manifest.
     const sha = (await git(['-C', tmp, 'rev-parse', 'HEAD'], { timeoutMs: 5_000 })).trim();
 
-    // 5. Atomic swap: move picked subtree into `target`.
+    // 5. Reject symlinks anywhere in the materialized tree before swap.
+    assertNoSymlinks(join(tmp, picked));
+
+    // 6. Atomic swap: move picked subtree into `target`.
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
     rmSync(target, { recursive: true, force: true });
     renameSync(join(tmp, picked), target);
