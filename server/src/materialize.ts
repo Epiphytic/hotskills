@@ -150,12 +150,8 @@ export const defaultGit: GitRunner = (args, opts = {}) =>
     // NEVER use shell:true here — that would re-open command injection
     // for anything that slipped through SAFE_NAME.
     const proc = spawn('git', args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-    const controller = new AbortController();
     const timer = opts.timeoutMs
-      ? setTimeout(() => {
-          controller.abort();
-          proc.kill('SIGTERM');
-        }, opts.timeoutMs)
+      ? setTimeout(() => proc.kill('SIGTERM'), opts.timeoutMs)
       : null;
 
     let stdout = '';

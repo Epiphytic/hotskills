@@ -10,10 +10,9 @@
  *     ${HOTSKILLS_CONFIG_DIR}/cache/audit/<owner>-<repo>.json
  */
 
-import { statSync } from 'node:fs';
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { cacheRead, cacheWrite } from './cache.js';
+import { cacheAgeSeconds, cacheRead, cacheWrite } from './cache.js';
 import {
   fetchAuditData,
   type AuditResponse,
@@ -106,10 +105,11 @@ export async function getAuditData(parsed: ParsedSkillId): Promise<AuditLookupRe
 
   const cached = await cacheRead<AuditResponse>(cachePath, AUDIT_TTL_SECONDS, validateAuditResponse);
   if (cached) {
+    const age = cacheAgeSeconds(cachePath);
     return {
       audit: cached[parsed.slug] ?? null,
       cached: true,
-      cacheAgeSeconds: cacheAgeSecondsSafe(cachePath),
+      ...(age !== null ? { cacheAgeSeconds: age } : {}),
     };
   }
 
@@ -151,11 +151,3 @@ export async function getAuditData(parsed: ParsedSkillId): Promise<AuditLookupRe
   return { audit: validated[parsed.slug] ?? null, cached: false };
 }
 
-function cacheAgeSecondsSafe(path: string): number | undefined {
-  try {
-    const stat = statSync(path);
-    return (Date.now() - stat.mtimeMs) / 1000;
-  } catch {
-    return undefined;
-  }
-}
