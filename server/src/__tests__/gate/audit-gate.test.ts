@@ -128,6 +128,21 @@ test('audit gate — non-"max" resolution throws UnsupportedResolutionError', as
   );
 });
 
+test('audit gate — sanitizes partner name in reason string (secure)', async () => {
+  const sec: SecurityConfig = { risk_max: 'medium', audit_partners: ['snyk\nINJECTED'] };
+  const lookup = fakeAuditLookup({
+    'snyk\nINJECTED': { risk: 'high', analyzedAt: '2026-04-01T00:00:00Z' },
+  });
+  const out = await checkAuditGate(PARSED, sec, { auditLookup: lookup });
+  assert.strictEqual(out.decision, 'block');
+  // Reason field must NOT contain the raw newline; sanitization replaces it.
+  assert.ok(out.reason);
+  assert.ok(!out.reason!.includes('\n'));
+  assert.match(out.reason!, /^audit:snyk_INJECTED:high$/);
+  // The full worstPartner field preserves the raw value for audit-tool consumers.
+  assert.strictEqual(out.worstPartner, 'snyk\nINJECTED');
+});
+
 test('audit gate — cached flag is propagated', async () => {
   const sec: SecurityConfig = {};
   const lookup = fakeAuditLookup(

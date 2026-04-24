@@ -79,6 +79,18 @@ function isPartnerSetEmpty(audit: SkillAuditData): boolean {
   return Object.keys(audit).length === 0;
 }
 
+/**
+ * Restrict a partner name to safe-for-log characters. The audit API may
+ * return arbitrary keys; the user's audit_partners config is validated as
+ * `type: string` only. Either source could carry control chars or
+ * separators that would break the `audit:<partner>:<risk>` reason format.
+ */
+function sanitizePartnerName(name: string | null): string {
+  if (!name) return 'unknown';
+  const cleaned = name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 64);
+  return cleaned || 'unknown';
+}
+
 // ─── Public API ───
 
 /**
@@ -138,9 +150,15 @@ export async function checkAuditGate(
   // ─── Resolve effective risk ───
   const er = effectiveRisk(filtered, 'max');
   if (riskExceedsMax(er.risk, riskMax)) {
+    // Partner names come from the audit API (untrusted) intersected with
+    // the user's audit_partners list. Sanitize for the reason string so a
+    // malicious partner name can't break log parsers downstream. The full
+    // worstPartner / perPartner fields preserve the raw value for callers
+    // who want it.
+    const safePartner = sanitizePartnerName(er.worstPartner);
     return {
       decision: 'block',
-      reason: `audit:${er.worstPartner ?? 'unknown'}:${er.risk}`,
+      reason: `audit:${safePartner}:${er.risk}`,
       effectiveRisk: er.risk,
       worstPartner: er.worstPartner,
       perPartner: er.perPartner,
