@@ -9,8 +9,11 @@ import {
   mergeConfigs,
   readGlobalConfig,
   readProjectConfig,
+  type HotskillsConfig,
   type SourceEntry,
 } from '../config.js';
+import { runGatePreview, type GateOutcome } from '../gate/index.js';
+import { parseSkillId, SkillIdError } from '../skill-id.js';
 import { searchSkillsAPI, type SearchSkill } from '../vendor/vercel-skills/find.js';
 
 // ─── Types ───
@@ -148,7 +151,11 @@ interface SeedEntry {
   slug: string;
 }
 
-async function decorateWithAudit(seeds: SeedEntry[]): Promise<SearchResultEntry[]> {
+async function decorateWithAudit(
+  seeds: SeedEntry[],
+  mergedConfig?: HotskillsConfig,
+  configDir?: string
+): Promise<SearchResultEntry[]> {
   const out: SearchResultEntry[] = [];
   for (const r of seeds) {
     let audit: SkillAuditData | null = null;
@@ -167,9 +174,34 @@ async function decorateWithAudit(seeds: SeedEntry[]): Promise<SearchResultEntry[
         audit = null;
       }
     }
-    out.push({ ...r, audit, gate_status: 'unknown' });
+
+    // Compute the gate preview only when we have merged config. Without it
+    // (CLI invocations without project context), keep gate_status='unknown'.
+    let gateStatus: 'allow' | 'block' | 'unknown' = 'unknown';
+    if (mergedConfig) {
+      try {
+        const parsedId = parseSkillId(r.skill_id);
+        const preview = await runGatePreview(parsedId, mergedConfig, {
+          ...(configDir !== undefined ? { configDir } : {}),
+          installCount: r.installs,
+        });
+        gateStatus = previewToStatus(preview);
+      } catch (err) {
+        if (!(err instanceof SkillIdError)) {
+          // Unexpected error in preview — leave as unknown rather than failing
+          // the whole search call. The picker can re-query if needed.
+        }
+      }
+    }
+    out.push({ ...r, audit, gate_status: gateStatus });
   }
   return out;
+}
+
+function previewToStatus(preview: GateOutcome): 'allow' | 'block' | 'unknown' {
+  if (preview.decision === 'allow') return 'allow';
+  if (preview.decision === 'block') return 'block';
+  return 'unknown';
 }
 
 // ─── github-source enumeration (carried follow-up hotskills-m8r) ───
@@ -400,12 +432,22 @@ export async function runSearch(query: string, opts: SearchOptions = {}): Promis
     };
   });
 
-  const decorated = await decorate(seeds);
+  // ─── Build merged config for gate preview decoration (hotskills-srt) ───
+  // Best-effort: if config IO fails (missing files, perm errors), skip the
+  // preview entirely — search must remain usable without per-project state.
+  const projectCwd = opts.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
+  let mergedForPreview: HotskillsConfig | undefined;
+  try {
+    const project = projectCwd ? await readProjectConfig(projectCwd) : { version: 1 };
+    const global = await readGlobalConfig(configDir);
+    mergedForPreview = mergeConfigs(global, project);
+  } catch {
+    mergedForPreview = undefined;
+  }
+
+  const decorated = await decorate(seeds, mergedForPreview, configDir);
 
   // ─── Github source enumeration (hotskills-m8r) ───
-  // Only attempt if we have a projectCwd available (so we can read per-project sources).
-  // Tests pass projectCwd explicitly; production reads from process.env.
-  const projectCwd = opts.projectCwd ?? process.env['HOTSKILLS_PROJECT_CWD'];
   let githubSeeds: GithubSearchSeed[] = [];
   if (projectCwd) {
     const enumerator = opts.githubEnumerator ?? defaultGithubEnumerator;
@@ -421,15 +463,31 @@ export async function runSearch(query: string, opts: SearchOptions = {}): Promis
       // best-effort
     }
   }
-  const githubResults: SearchResultEntry[] = githubSeeds.map((g) => ({
-    skill_id: g.skill_id,
-    name: g.name,
-    installs: g.installs,
-    source: g.source,
-    slug: g.slug,
-    audit: null,
-    gate_status: 'unknown' as const,
-  }));
+  const githubResults: SearchResultEntry[] = [];
+  for (const g of githubSeeds) {
+    let gateStatus: 'allow' | 'block' | 'unknown' = 'unknown';
+    if (mergedForPreview) {
+      try {
+        const parsedId = parseSkillId(g.skill_id);
+        const preview = await runGatePreview(parsedId, mergedForPreview, {
+          configDir,
+          installCount: g.installs,
+        });
+        gateStatus = previewToStatus(preview);
+      } catch {
+        // leave as unknown
+      }
+    }
+    githubResults.push({
+      skill_id: g.skill_id,
+      name: g.name,
+      installs: g.installs,
+      source: g.source,
+      slug: g.slug,
+      audit: null,
+      gate_status: gateStatus,
+    });
+  }
 
   // Merge: skills.sh first by default, but preferred github sources (any
   // entry where the owner/repo source had preferred:true) move to the top.

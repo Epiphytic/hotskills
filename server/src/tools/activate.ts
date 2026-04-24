@@ -10,46 +10,40 @@ import {
   type ActivatedSkill,
   type HotskillsConfig,
 } from '../config.js';
+import { runGateStack, type GateOutcome, type GateStackOptions } from '../gate/index.js';
+import { logWhitelistActivation } from '../gate/whitelist.js';
 import { parseSkillId, SkillIdError } from '../skill-id.js';
 import { resolveConfigDir, resolveProjectCwd } from './_util.js';
 
-interface GateDecision {
-  decision: 'allow' | 'block';
-  reason?: string;
-  layers: { whitelist: string; audit: string; heuristic: string; install: string };
-}
-
-/**
- * Phase-3 stub gate: pass-through ALLOW.
- * Phase 4 (Task 4.6) replaces this with the real four-layer gate stack.
- * Surfacing the layers shape now keeps the tool response stable across
- * the phase boundary so callers don't need to special-case v0 output.
- */
-async function runGateStackStub(
-  _parsedId: ReturnType<typeof parseSkillId>,
-  _merged: HotskillsConfig
-): Promise<GateDecision> {
-  return {
-    decision: 'allow',
-    layers: { whitelist: 'skipped', audit: 'skipped', heuristic: 'skipped', install: 'skipped' },
-  };
-}
+type GateDecision = GateOutcome;
 
 export interface ActivateToolDeps {
   /** Override the configured project cwd (tests). */
   projectCwd?: string;
   configDir?: string;
-  /** Phase-4 wires the real gate; tests can stub this directly. */
-  gate?: typeof runGateStackStub;
+  /** Override the gate stack (tests). Default: runGateStack from gate/index. */
+  gate?: (
+    parsedId: ReturnType<typeof parseSkillId>,
+    merged: HotskillsConfig,
+    opts: GateStackOptions
+  ) => Promise<GateOutcome>;
   /** Pass-through to activateSkill — usually only set in tests. */
   activateOptions?: ActivateOptions;
   /** Audit lookup override (tests). */
   auditLookup?: typeof getAuditData;
+  /**
+   * Skill install count, when known by the caller (e.g. picker passes the
+   * value from search results). Defaults to 0; the install gate then
+   * relies on preferred_sources / built-in allowlist for github sources.
+   */
+  installCount?: number;
 }
 
 export interface ActivateInput {
   skill_id: string;
   force_whitelist?: boolean;
+  /** Optional install count from search results, fed to the install gate. */
+  install_count?: number;
 }
 
 export interface ActivateSuccess {
@@ -66,10 +60,12 @@ export interface ActivateErrorResult {
     | 'gate_blocked'
     | 'materialization_failed'
     | 'config_write_failed'
+    | 'config_error'
     | 'internal_error';
   message: string;
   expected_format?: string;
   layers?: GateDecision['layers'];
+  reason?: string;
 }
 
 /**
@@ -98,6 +94,24 @@ function appendWhitelistSkill(config: HotskillsConfig, skillId: string): Hotskil
 /**
  * Run the full activate flow. Exposed for testing without going through
  * the MCP server harness.
+ *
+ * Flow per ADR-004 §Gate stack and ADR-003 §Materialization:
+ *   1. Parse skill_id.
+ *   2. Read project + global config; merge.
+ *   3. If force_whitelist: append to project whitelist AND log entry to
+ *      whitelist-activations.log (closes hotskills-0rk).
+ *   4. Fetch audit snapshot (best-effort).
+ *   5. Materialize the skill so the heuristic gate can scan its tree.
+ *      Idempotent — re-activating an already-cached skill is cheap.
+ *   6. Run the four-layer gate stack (whitelist → audit → heuristic → install).
+ *      Block at any layer aborts before allow-list write.
+ *   7. Append to project allow-list (dedupe by skill_id).
+ *
+ * Materialization happens BEFORE the gate decision so the heuristic layer
+ * has the SKILL.md tree to scan. This means a blocked-by-gate skill leaves
+ * its cache directory populated — that's intentional: the cache write is
+ * idempotent and re-running activate after a config change (e.g. adding
+ * the skill to the whitelist) skips re-materialization.
  */
 export async function runActivate(
   input: ActivateInput,
@@ -125,8 +139,9 @@ export async function runActivate(
   const globalConfig = await readGlobalConfig(configDir);
 
   // 3. force_whitelist: append BEFORE running gate so the whitelist layer
-  // matches in phase 4. The picker is responsible for the user-facing
-  // confirmation prompt per ADR-004.
+  // matches. Also log to whitelist-activations.log per ADR-004 (closes
+  // hotskills-0rk: the picker confirmation has already happened in slash
+  // command UX; this is the audit trail).
   if (input.force_whitelist === true) {
     projectConfig = appendWhitelistSkill(projectConfig, input.skill_id);
     try {
@@ -134,21 +149,18 @@ export async function runActivate(
     } catch (err) {
       return { error: 'config_write_failed', message: (err as Error).message };
     }
+    try {
+      await logWhitelistActivation(
+        parsedId,
+        { scope: 'skill', matched_entry: input.skill_id },
+        { configDir }
+      );
+    } catch {
+      // Logging failure must never abort the activation.
+    }
   }
 
-  // 4. Run gate stack (stub in v0).
-  const gate = deps.gate ?? runGateStackStub;
-  const merged = mergeConfigs(globalConfig, projectConfig);
-  const decision = await gate(parsedId, merged);
-  if (decision.decision === 'block') {
-    return {
-      error: 'gate_blocked',
-      message: decision.reason ?? 'gate blocked',
-      layers: decision.layers,
-    };
-  }
-
-  // 5. Fetch audit snapshot (best-effort; null on any failure).
+  // 4. Fetch audit snapshot (best-effort; null on any failure).
   const auditLookup = deps.auditLookup ?? getAuditData;
   let snapshot: AuditSnapshot;
   try {
@@ -158,7 +170,7 @@ export async function runActivate(
     snapshot = { audit: null, cached_at: new Date().toISOString() };
   }
 
-  // 6. Materialize + manifest.
+  // 5. Materialize first so the heuristic gate can scan the tree.
   let outcome;
   try {
     const opts: ActivateOptions = deps.activateOptions ?? {};
@@ -171,6 +183,35 @@ export async function runActivate(
     return {
       error: 'materialization_failed',
       message: msg.length > 500 ? msg.slice(0, 500) + '…' : msg,
+    };
+  }
+
+  // 6. Run gate stack post-materialize.
+  const merged = mergeConfigs(globalConfig, projectConfig);
+  const gate = deps.gate ?? runGateStack;
+  let decision: GateOutcome;
+  try {
+    decision = await gate(parsedId, merged, {
+      configDir,
+      skillDir: outcome.path,
+      installCount: input.install_count ?? deps.installCount ?? 0,
+      // Wire the audit-lookup override through to the audit gate; tests
+      // pass a stub here so the gate doesn't try to read process.env or
+      // hit the network.
+      ...(deps.auditLookup ? { auditGateOptions: { auditLookup: deps.auditLookup } } : {}),
+    });
+  } catch (err) {
+    return {
+      error: 'config_error',
+      message: (err as Error).message ?? String(err),
+    };
+  }
+  if (decision.decision === 'block') {
+    return {
+      error: 'gate_blocked',
+      message: decision.reason ?? 'gate blocked',
+      layers: decision.layers,
+      ...(decision.reason ? { reason: decision.reason } : {}),
     };
   }
 
@@ -205,10 +246,19 @@ export function registerActivate(server: McpServer): void {
     {
       skill_id: z.string().describe('Fully-qualified skill ID: <source>:<owner>/<repo>:<slug>'),
       force_whitelist: z.boolean().optional().describe('Skip security gates and whitelist this skill'),
+      install_count: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe('Install count from search results, used by the install gate'),
     },
-    async ({ skill_id, force_whitelist }) => {
+    async ({ skill_id, force_whitelist, install_count }) => {
       try {
-        const result = await runActivate({ skill_id, force_whitelist });
+        const input: ActivateInput = { skill_id };
+        if (force_whitelist !== undefined) input.force_whitelist = force_whitelist;
+        if (install_count !== undefined) input.install_count = install_count;
+        const result = await runActivate(input);
         if ('error' in result) {
           return {
             isError: true,

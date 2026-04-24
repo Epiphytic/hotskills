@@ -127,17 +127,26 @@ test('runActivate — gate block returns gate_blocked with layers', async () => 
         projectCwd: sb.projectCwd,
         configDir: sb.configDir,
         gate: async () => ({
-          decision: 'block',
+          decision: 'block' as const,
           reason: 'audit:snyk:high',
-          layers: { whitelist: 'no-match', audit: 'block', heuristic: 'skipped', install: 'skipped' },
+          layers: { whitelist: 'block' as const, audit: 'block' as const, heuristic: 'skipped' as const, install: 'skipped' as const },
+          details: {},
+          warnings: [],
         }),
+        // The new flow materializes BEFORE the gate so the gate block test
+        // needs a fake materialize to short-circuit IO.
+        activateOptions: {
+          configDir: sb.configDir,
+          materializeImpl: fakeMaterialize(cacheSkillPath(PARSED, sb.configDir)),
+        },
+        auditLookup: async () => ({ audit: null, cached: false }),
       }
     );
     if (!('error' in result)) assert.fail('expected error');
     assert.strictEqual(result.error, 'gate_blocked');
     assert.strictEqual(result.message, 'audit:snyk:high');
     assert.deepStrictEqual(result.layers, {
-      whitelist: 'no-match',
+      whitelist: 'block',
       audit: 'block',
       heuristic: 'skipped',
       install: 'skipped',
