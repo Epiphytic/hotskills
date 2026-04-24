@@ -1,7 +1,7 @@
 # ADR-002: Skill discovery via find-skills + vercel-labs/skills consumption strategy
 
 **Date:** 2026-04-23
-**Status:** Accepted
+**Status:** Accepted (amended 2026-04-23 — see Amendment 1)
 **Decision makers:** liam.helmer@gmail.com (user), local subagent, star-chamber
 
 ## Context
@@ -121,3 +121,49 @@ This ADR fixes how hotskills consumes find-skills, vercel-labs/skills' source mo
 ## Council Input
 
 Star-chamber flagged "ongoing upstream drift and compliance burden" as a vendoring concern; addressed via per-file sync-SHA headers, weekly CI drift check, and required LICENSE+ATTRIBUTION files. Star-chamber also flagged cache as "race-prone and stale-prone"; addressed via mandatory atomic writes, lock files, and schema validation on read.
+
+## Amendment 1 — Materialization strategy (2026-04-23)
+
+**Trigger:** Phase 0 smoke-test (Task 1.7) confirmed that `skills add` in `vercel-labs/skills@1.5.1` does not accept `--target <dir>`. Available flags are `-g/--global`, `-a/--agent`, `-s/--skill`, `-y/--yes`, `--copy`, `--all`, `--full-depth`. The original ADR's mandate to shell out to `npx skills add --target <hotskills-cache-path>` is therefore unimplementable.
+
+**Decision (option C + B):** Drop the skills-CLI shell-out for materialization entirely. Materialize skills directly inside the MCP server using two source-typed code paths:
+
+- **skills.sh-hosted skills** → vendored `blob.ts` (already planned in ADR-002 as fallback) becomes the **primary** materialization path. Resolve the skill's source URL via the audit/search API, then fetch the SKILL.md tree via the skills.sh blob endpoint and write into the cache layout.
+- **User-configured GitHub repo sources** → git sparse-checkout. Clone with `--depth 1 --filter=blob:none --sparse`, then `sparse-checkout set <skill-subdir>`. Materializes only the SKILL.md subtree, no full history.
+
+**Find/search remains shell-out-capable.** `npx skills find` is read-only, fast, and stable; we keep it as one of two find paths (the other being skills.sh `/api/search?q=` directly via vendored client). Setup-time absence of `npx`/`skills` is now a soft warning, not a hard prerequisite.
+
+### Requirements (RFC 2119) — supersede the original "Shell-out + cache wrapper" section
+
+- The MCP server MUST materialize skills.sh-hosted skills via vendored `blob.ts` writing into `~/.config/hotskills/cache/skills/skills.sh/<owner>/<repo>/<slug>/`. The skills CLI MUST NOT be invoked for materialization.
+- The MCP server MUST materialize GitHub-source skills via `git` sparse-checkout into `~/.config/hotskills/cache/skills/github/<owner>/<repo>/<slug>/`. The clone MUST use `--depth 1 --filter=blob:none --sparse`; the sparse-checkout pattern MUST be the skill's subdirectory (root, `skills/<slug>`, `.claude/skills/<slug>`, or `.agents/skills/<slug>` — first match wins per the existing scan order).
+- `git` MUST be a hard prerequisite when any user-configured GitHub source is present in merged config; `hotskills-setup` MUST verify `git --version >= 2.25` (sparse-checkout subcommand minimum) and surface a remediation message if missing.
+- Cache layout, atomic writes, lock files, permissions (0700/0600), and TTLs from the original "Cache integrity" + "Cache TTLs" sections remain unchanged and apply to both materialization paths.
+- Find/search MAY shell out to `npx skills find` when present, but the MCP server MUST also support direct skills.sh `/api/search?q=` calls via a vendored client. Selection MUST be configurable (`config.discovery.find_strategy: "cli" | "api" | "auto"`, default `"auto"` — prefer CLI when present, fall back to API).
+- The wrapper script `scripts/npx-skills-wrapper.sh` is no longer required for `add`; it remains OPTIONAL for `find` cache interposition. If retained, it MUST be scoped to read-only operations.
+
+### Rationale
+
+- Eliminates a load-bearing dependency on a CLI flag that does not exist; removes the upstream-PR-or-bust risk for the skills CLI.
+- `blob.ts` already had to be vendored for the fallback path; promoting it to primary deletes a code path rather than adding one.
+- Sparse-checkout is a standard git capability (since 2.25, Jan 2020) and bypasses the skills CLI's agent-layout opinions for sources we control.
+- skills.sh API endpoint correction noted in `hotskills-ns3` notes (search is `/api/search?q=`, not `/api/skills?query=`) is incorporated into the vendored client.
+
+### Alternatives Considered (re-eval)
+
+- **A — `--agent <name>` with synthetic agent config:** rejected. Couples hotskills to the skills CLI's agent-config schema and to its install layout (which targets `~/.claude/skills/<agent>/`). Defeats the purpose of an isolated cache.
+- **D — Hybrid (CLI for find, git clone for materialization, no blob.ts promotion):** rejected. Would leave skills.sh-hosted skills unservable when `git` is the only materialization path (skills.sh skills are not always backed by a discoverable git repo). Promoting `blob.ts` covers that case natively.
+
+### Phase 0 verification items (revised)
+
+The original Phase 0 items related to `npx skills add --target` are CLOSED (assumption invalidated; option chosen). New items:
+
+- Confirm vendored `blob.ts` materialization writes a complete SKILL.md tree for a representative skills.sh skill (smoke test in Task 1.6 / phase-2 task 2.4 replacement).
+- Confirm `git sparse-checkout` against a representative GitHub-hosted skills repo materializes only the targeted subtree (no full clone).
+- Concurrent-activation lock test still applies, now for both materialization paths.
+
+### Plan impact
+
+- `hotskills-ksp` (Task 2.1, vendor modules): unblocked. Scope unchanged but `blob.ts` is now critical-path, not fallback.
+- `hotskills-0p2` (Task 2.4, npx wrapper): re-scoped to "materialization router" — dispatch by source type, call `blob.ts` for skills.sh, sparse-checkout for github. The shell wrapper file is retained only if a `find` cache layer is implemented.
+- ADR-003 §7 ("user-configured sources") aligns with the sparse-checkout path; no separate ADR-003 amendment needed.

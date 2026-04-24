@@ -86,11 +86,11 @@
 - **Acceptance:** Unit test: concurrent `acquireLock` calls from two async contexts — second waits or times out cleanly; corrupted cache file returns null (not a throw); atomic write survives a simulated mid-write interruption (file rename is atomic on POSIX).
 - **Depends on:** Task 1.4
 
-### Task 2.4: npx-skills-wrapper.sh cache-fronted shell-out
-- **Outcome:** `scripts/npx-skills-wrapper.sh` accepts query + args, hashes them to derive a cache key, checks `~/.config/hotskills/cache/search/<hash>.json` (1h TTL), calls `npx skills find <query>` on miss, writes result atomically. Script exits non-zero if `npx` or `skills` is missing and prints a structured diagnostic to stderr. `--target <dir>` is passed for `add` operations; `-g` flag is NEVER passed.
-- **Touches:** `scripts/npx-skills-wrapper.sh`
-- **Acceptance:** `bash scripts/npx-skills-wrapper.sh "react"` returns JSON; second call within 1h returns the same JSON without a network call (confirmed via `strace` or timestamp comparison); calling with `npx` absent exits non-zero with a message referencing `hotskills-setup`.
-- **Depends on:** Task 1.7 (Phase 0 npx behavior verified), Task 2.3
+### Task 2.4: Materialization router (blob.ts + git sparse-checkout)
+- **Outcome:** `server/src/materialize.ts` dispatches by source type (per ADR-002 Amendment 1). For `skills.sh:*` skill IDs, calls vendored `blob.ts` to fetch the SKILL.md tree from skills.sh and writes into `${HOTSKILLS_CONFIG_DIR}/cache/skills/skills.sh/<owner>/<repo>/<slug>/`. For `github:*` skill IDs, runs `git clone --depth 1 --filter=blob:none --sparse <url> <tmpdir>` then `git -C <tmpdir> sparse-checkout set <skill-subdir>` then atomically moves the materialized subtree into `${HOTSKILLS_CONFIG_DIR}/cache/skills/github/<owner>/<repo>/<slug>/`. Acquires per-skill lock via the cache primitive (Task 2.3). At server startup, when any GitHub-source skill is in the merged config, verifies `git --version >= 2.25` and surfaces a structured remediation message if missing.
+- **Touches:** `server/src/materialize.ts`, `server/src/__tests__/materialize.test.ts`
+- **Acceptance:** `blob.ts` path materializes a representative skills.sh skill (full SKILL.md tree present); sparse-checkout path materializes a representative GitHub skill subtree only (no full clone, working tree contains only the targeted subdirectory); concurrent activation of same skill from two contexts blocks correctly on the lock; absent `git` with a GitHub source configured emits the remediation message and refuses materialization (does not crash).
+- **Depends on:** Task 1.7 (Phase 0 npx behavior verified — confirmed `--target` absent, drove this re-architecture), Task 2.3
 
 ### Task 2.5: Audit API client (vendored telemetry.ts wrapper)
 - **Outcome:** `server/src/audit.ts` wraps the vendored `fetchAuditData` from `vendor/vercel-skills/telemetry.ts`. Enforces 3000ms timeout; treats timeout and non-2xx as no-data; validates response against vendored `AuditResponse` type; caches to `${HOTSKILLS_CONFIG_DIR}/cache/audit/<owner>-<repo>.json` for 24h using the cache primitive from Task 2.3; logs errors to `${HOTSKILLS_CONFIG_DIR}/logs/audit-errors.log`.
@@ -99,10 +99,10 @@
 - **Depends on:** Task 1.6 (Phase 0 audit API verified), Task 2.1, Task 2.3
 
 ### Task 2.6: Wire hotskills.search to real results
-- **Outcome:** `server/src/tools/search.ts` stub replaced with a real implementation: shells out via `npx-skills-wrapper.sh`, merges results with audit data from `audit.ts` (cached), applies source filtering from `sources?` arg, and returns `{results, cached, cache_age_seconds}` per ADR-003 tool contract. Gate status (`allow`/`block`/`unknown`) is computed per-result using a read-only preview of the gate stack (no materialization).
+- **Outcome:** `server/src/tools/search.ts` stub replaced with a real implementation. Per `config.discovery.find_strategy` (default `"auto"` — prefer `npx skills find` shell-out when present, fall back to direct skills.sh `/api/search?q=` via vendored client), fetches results, merges with audit data from `audit.ts` (cached), applies source filtering from `sources?` arg, and returns `{results, cached, cache_age_seconds}` per ADR-003 tool contract. Gate status (`allow`/`block`/`unknown`) is computed per-result using a read-only preview of the gate stack (no materialization).
 - **Touches:** `server/src/tools/search.ts`, `server/src/__tests__/search.test.ts`
-- **Acceptance:** Integration test (with `npx skills` mocked): `hotskills.search({query: "react"})` returns results array with `skill_id`, `installs`, `description`, `audit`, `gate_status` fields; `cached: true` on repeat call; `sources` filter narrows results.
-- **Depends on:** Task 1.6 (Phase 0 skills.sh API verified), Task 2.4, Task 2.5
+- **Acceptance:** Integration tests: `find_strategy: "api"` → `hotskills.search({query: "react"})` returns results via mocked skills.sh `/api/search?q=` with `skill_id`, `installs`, `description`, `audit`, `gate_status`; `find_strategy: "cli"` with mocked `npx skills find` returns equivalent shape; `cached: true` on repeat call; `sources` filter narrows results.
+- **Depends on:** Task 1.6 (Phase 0 skills.sh API verified), Task 2.5
 
 ### Task 2.7: Weekly CI drift check for vendored modules
 - **Outcome:** `.github/workflows/vendor-drift.yml` runs weekly (cron): re-fetches the five vendored source files from upstream `vercel-labs/skills` at the pinned SHA, diffs against `vendor/vercel-skills/` (excluding patch-comment lines), and opens a GitHub issue if drift exceeds zero lines (outside of the attribution header block).
@@ -131,11 +131,11 @@
 - **Depends on:** Task 1.4, Task 2.3, Task 3.1
 
 ### Task 3.3: Materialization engine
-- **Outcome:** `server/src/activate.ts` implements `materializeSkill(skillId, parsedId, auditSnapshot)`: resolves materialized path (`${HOTSKILLS_CONFIG_DIR}/cache/skills/<source>/<owner>/<repo>/<slug>/`), acquires lock, shells out to `npx skills add <skill> --target <path>` via the wrapper, verifies SKILL.md exists, writes `.hotskills-manifest.json` (per ADR-003 manifest fields: `source`, `owner`, `repo`, `slug`, `version`, `content_sha256`, `audit_snapshot`, `activated_at`), releases lock. On re-activation, checks `content_sha256`; skips re-materialization if matching (idempotent).
+- **Outcome:** `server/src/activate.ts` implements `materializeSkill(skillId, parsedId, auditSnapshot)`: resolves materialized path (`${HOTSKILLS_CONFIG_DIR}/cache/skills/<source>/<owner>/<repo>/<slug>/`), acquires lock, calls the materialization router from Task 2.4 (`materialize.ts`) which dispatches to `blob.ts` for skills.sh sources or `git sparse-checkout` for github sources, verifies SKILL.md exists, writes `.hotskills-manifest.json` (per ADR-003 manifest fields: `source`, `owner`, `repo`, `slug`, `version`, `content_sha256`, `audit_snapshot`, `activated_at`), releases lock. On re-activation, checks `content_sha256`; skips re-materialization if matching (idempotent).
 - **Touches:** `server/src/activate.ts`, `server/src/__tests__/activate.test.ts`
-- **Acceptance:** Test with mocked `npx skills add`: manifest is written with all required fields; second call with same content SHA returns without re-running the shell-out; SHA mismatch triggers re-materialization; lock prevents concurrent materializations of the same skill.
+- **Acceptance:** Test with mocked materialization router: manifest is written with all required fields; second call with same content SHA returns without re-invoking the router; SHA mismatch triggers re-materialization; lock prevents concurrent materializations of the same skill.
 - **Depends on:** Task 2.3, Task 2.4
-- **risk:high** — Depends on `npx skills add --target <dir>` working correctly (same Phase 0 dependency as Task 2.4). Also depends on `${SKILL_PATH}` substitution covering real-world SKILL.md layouts — sample 20 popular skills before marking done (ADR-003 Phase 0 item).
+- **Notes:** Original Phase 0 dependency on `npx skills add --target <dir>` is closed (assumption invalidated; ADR-002 Amendment 1 chose blob.ts + sparse-checkout). `${SKILL_PATH}` substitution sampling against 20 popular skills (ADR-003 Phase 0 item) still applies before marking done.
 
 ### Task 3.4: hotskills.activate tool implementation
 - **Outcome:** `server/src/tools/activate.ts` stub replaced with full implementation: parse and validate `skill_id` format; run gate stack (Phase 4 will replace the stub gate with real logic; for now, a pass-through stub gate is acceptable); call `materializeSkill`; append to project allow-list via `config.ts`; return `{skill_id, path, manifest}`. Malformed skill IDs return a structured error. Skills not found in any source return an explicit error (no auto-source-add).
@@ -277,7 +277,7 @@
 - **Depends on:** Task 6.2, Task 5.5
 
 ### Task 6.4: MANIFEST.md final reconciliation
-- **Outcome:** `MANIFEST.md` is fully populated with all modules, facades, and scripts created across all phases. The module registry covers: `cache.ts`, `config.ts`, `audit.ts`, `skill-id.ts`, `logger.ts`, `migrations/index.ts`, all gate modules, all tool modules, `vendor/vercel-skills/*`, `scripts/inject-reminders.sh`, `scripts/npx-skills-wrapper.sh`. External integration facades documented for: skills.sh API, `add-skill.vercel.sh/audit` API, `npx skills` CLI.
+- **Outcome:** `MANIFEST.md` is fully populated with all modules, facades, and scripts created across all phases. The module registry covers: `cache.ts`, `config.ts`, `audit.ts`, `skill-id.ts`, `logger.ts`, `migrations/index.ts`, `materialize.ts`, all gate modules, all tool modules, `vendor/vercel-skills/*`, `scripts/inject-reminders.sh`. External integration facades documented for: skills.sh API (search + blob), `add-skill.vercel.sh/audit` API, `git` CLI (sparse-checkout), and (optional) `npx skills find` CLI when present.
 - **Touches:** `MANIFEST.md`
 - **Acceptance:** Every `server/src/*.ts` file and `scripts/*.sh` file has an entry; no duplicate entries; all file paths are absolute or clearly relative to repo root; external facades section matches the three external surfaces.
 - **Depends on:** Task 6.2
