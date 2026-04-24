@@ -26,6 +26,26 @@
 | `validateConfig()` / `validateState()` | `server/src/schemas/index.ts` | ajv-compiled validators for config.v1 and state.v1 schemas | `ajv`, `ajv-formats` | Y |
 | `phase0-api-verify.sh` | `scripts/phase0-api-verify.sh` | RISK-FIRST CI smoke-test for skills.sh `/api/search` and add-skill.vercel.sh `/audit` | `curl`, `node` | Y |
 | `phase0-npx-verify.sh` | `scripts/phase0-npx-verify.sh` | RISK-FIRST CI smoke-test for `skills add --target` (currently fails: flag absent in v1.5.1; resolution tracked in beads `hotskills-ns3`) | `npx`, `skills` CLI | Y |
+| `sync-vendor.mjs` | `server/scripts/sync-vendor.mjs` | Build prebuild step: copies `vendor/vercel-skills/*.ts` into `server/src/vendor/vercel-skills/` so tsc compiles the vendored sources without widening rootDir | `node:fs` | Y |
+
+---
+
+## 📦 2a. Vendored Modules (vercel-labs/skills)
+
+Source-of-truth lives at `vendor/vercel-skills/` (committed). Copied into
+`server/src/vendor/vercel-skills/` (gitignored) at build time. Full
+attribution and per-file modification log at `vendor/vercel-skills/ATTRIBUTION.md`.
+
+| Vendored module | Upstream path | Modifications | Purpose |
+| :--- | :--- | :--- | :--- |
+| `vendor/vercel-skills/types.ts` | `src/types.ts` | none | Shared types: `ParsedSource`, `Skill`, `AgentConfig`, `RemoteSkill`, `AgentType` |
+| `vendor/vercel-skills/telemetry.ts` | `src/telemetry.ts` | telemetry tracking stripped | Audit API client: `fetchAuditData`, `PartnerAudit`, `AuditResponse` |
+| `vendor/vercel-skills/source-parser.ts` | `src/source-parser.ts` | import-extension only | URL/source parsing: `parseSource`, `getOwnerRepo`, `parseOwnerRepo`, `sanitizeSubpath`, `isRepoPrivate` |
+| `vendor/vercel-skills/blob.ts` | `src/blob.ts` | inlined `parseFrontmatter`; import-extension | Blob materialization: `tryBlobInstall`, `fetchRepoTree`, `findSkillMdPaths`, `toSkillSlug`; adds `yaml` runtime dep |
+| `vendor/vercel-skills/find.ts` | `src/find.ts` | extracted only `searchSkillsAPI` | skills.sh search API client: `searchSkillsAPI`, `SearchSkill` |
+
+Sync state: SHA `bc21a37a12b90fcb5aec051c91baf5b227b704b1` (tag v1.5.1), 2026-04-23.
+Drift check workflow tracked in beads task `hotskills-35o`.
 
 ---
 

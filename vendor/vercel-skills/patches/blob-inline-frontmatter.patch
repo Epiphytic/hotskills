@@ -1,0 +1,53 @@
+# Patch: blob-inline-frontmatter
+
+Inlines `parseFrontmatter` from upstream `src/frontmatter.ts` into
+`vendor/vercel-skills/blob.ts`.
+
+## Rationale
+
+ADR-002 §Vendoring enumerates exactly five vendored modules:
+`telemetry.ts`, `types.ts`, `source-parser.ts`, `blob.ts`, `find.ts`.
+Adding `frontmatter.ts` as a sixth would require an ADR amendment.
+
+`blob.ts` upstream does:
+
+```ts
+import { parseFrontmatter } from './frontmatter.ts';
+```
+
+To stay within the ADR boundary, the body of upstream `frontmatter.ts`
+(7 LOC of executable code) is inlined as a private function near the
+top of the vendored `blob.ts`. The runtime dependency on the `yaml`
+package is moved into `server/package.json`.
+
+## Changed lines in blob.ts
+
+```diff
+- import { parseFrontmatter } from './frontmatter.ts';
++ import { parse as parseYaml } from 'yaml';
++
++ // ─── Inlined frontmatter parser (upstream src/frontmatter.ts) ───
++
++ function parseFrontmatter(raw: string): {
++   data: Record<string, unknown>;
++   content: string;
++ } {
++   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
++   if (!match) return { data: {}, content: raw };
++   const data = (parseYaml(match[1]!) as Record<string, unknown>) ?? {};
++   return { data, content: match[2] ?? '' };
++ }
+```
+
+(Plus the import path rewrite `'./types.ts'` → `'./types.js'` for ESM
+NodeNext resolution — see `import-extensions.patch`.)
+
+## Drift-check guidance
+
+When re-fetching `src/blob.ts` from upstream, the drift-check tool
+should:
+1. Replace upstream `import { parseFrontmatter } from './frontmatter.ts';`
+   with the inlined block (or strip both sides before diffing).
+2. Apply the `import-extensions.patch` rewrite.
+3. Then compare the body of `tryBlobInstall`, `findSkillMdPaths`,
+   `fetchRepoTree`, and the helpers verbatim.

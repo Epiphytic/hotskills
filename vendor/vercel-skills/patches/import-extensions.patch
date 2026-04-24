@@ -1,0 +1,35 @@
+# Patch: import-extensions
+
+Rewrites vendored TypeScript imports to use `.js` instead of `.ts`
+extensions, for ESM/NodeNext resolution under hotskills' tsconfig.
+
+## Rationale
+
+Upstream `vercel-labs/skills@1.5.1` uses TypeScript's `--experimental-strip-types`
+loader, which permits literal `.ts` extensions in import specifiers.
+Hotskills' server compiles to ESM via `tsc` with `module: "NodeNext"`
+and `moduleResolution: "NodeNext"`. NodeNext's strict ESM resolution
+requires `.js` extensions in import specifiers (which TypeScript then
+maps to `.ts` source files at compile time).
+
+## Affected lines
+
+- `vendor/vercel-skills/source-parser.ts`:
+  ```diff
+  - import type { ParsedSource } from './types.ts';
+  + import type { ParsedSource } from './types.js';
+  ```
+- `vendor/vercel-skills/blob.ts`:
+  ```diff
+  - import type { Skill } from './types.ts';
+  + import type { Skill } from './types.js';
+  ```
+  (Plus the `parseFrontmatter` import is removed entirely — see
+  `blob-inline-frontmatter.patch`.)
+
+## Drift-check guidance
+
+The drift-check workflow should normalize both upstream and vendored
+import lines to a common form (e.g., strip the `.ts`/`.js` suffix
+before diffing) so this purely-syntactic difference does not register
+as semantic drift.
