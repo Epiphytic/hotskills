@@ -35,14 +35,14 @@
     "email": "liam.helmer@gmail.com"
   },
   "license": "MIT",
-  "homepage": "https://github.com/epiphytic/hotskills",
+  "homepage": "https://github.com/Epiphytic/hotskills",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/epiphytic/hotskills.git",
+    "url": "git+https://github.com/Epiphytic/hotskills.git",
     "directory": "server"
   },
   "bugs": {
-    "url": "https://github.com/epiphytic/hotskills/issues"
+    "url": "https://github.com/Epiphytic/hotskills/issues"
   },
   "publishConfig": {
     "access": "public"
