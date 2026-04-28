@@ -109,6 +109,7 @@ Synced from `vendor/vercel-skills/` at build time by `server/scripts/sync-vendor
 | `scripts/tests/e2e-stdio.mjs` | **(Phase 6)** Node JSON-RPC driver used by `e2e.sh` |
 | `scripts/e2e-claude-keyword.sh` | **(Phase 6)** Real `claude --plugin-dir` keyword-flow E2E (gated behind `CI_E2E_CLAUDE=1`) |
 | `scripts/e2e-claude-config.sh` | **(Phase 6)** Real `claude --plugin-dir` config-matrix E2E (gated behind `CI_E2E_CLAUDE=1`) |
+| `scripts/e2e-plugin-load.sh` | Manifest-schema E2E: `claude plugin marketplace add` + `claude plugin install` against this repo to catch `.claude-plugin/marketplace.json` and `plugin.json` schema drift |
 
 ---
 
