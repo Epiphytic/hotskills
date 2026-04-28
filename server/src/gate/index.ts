@@ -85,6 +85,13 @@ export interface GateStackOptions {
   skillDir?: string;
   /** Install count from search/audit (default 0 — github-source skills have no count). */
   installCount?: number;
+  /**
+   * When true, the install layer is reported as `skipped` instead of being
+   * evaluated against `min_installs`. Used by the audit tool when the
+   * caller hasn't supplied an install count: blocking on `install_threshold:0:N`
+   * would be misleading information rather than a real gate decision.
+   */
+  skipInstallGate?: boolean;
 }
 
 // ─── Helpers ───
@@ -296,7 +303,12 @@ export async function runGatePreview(
   // Heuristic always skipped in preview (no materialization).
   layers.heuristic = 'skipped';
 
-  // Install preview.
+  // Install preview. When the caller explicitly opts out (audit tool with no
+  // install_count), report 'skipped' rather than fabricating a 0 count.
+  if (opts.skipInstallGate) {
+    layers.install = 'skipped';
+    return { decision: 'allow', layers, details, warnings };
+  }
   const installCount = opts.installCount ?? 0;
   const install = checkInstallGate(parsedId, installCount, config.security);
   details.install = install;

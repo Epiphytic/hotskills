@@ -6,6 +6,25 @@ manifest tracks separately in `.claude-plugin/plugin.json`.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-04-28
+
+### Fixed
+- **`hotskills.audit` returned a misleading install-gate decision.** When the
+  caller didn't pass an install count, the gate preview fabricated
+  `install_threshold:0:1000` — implying a real block when the layer simply
+  hadn't been evaluated. The tool now accepts an optional `install_count`;
+  when provided, the install layer is evaluated against `min_installs`; when
+  omitted, the layer is reported as `'skipped'` and no `details.install` is
+  emitted, so callers can tell "not evaluated" apart from a real block.
+
+### Changed
+- New `skipInstallGate?: boolean` option on `runGatePreview` — used by the
+  audit tool but available to any caller that wants to omit the install layer
+  from a gate preview.
+- `/hotskills` slash command's `--whitelist` flow now passes the search-time
+  `installs` value through to `hotskills.audit({ install_count })` so the
+  warning's "Current risk" line is computed honestly.
+
 ## [0.1.3] — 2026-04-28
 
 ### Fixed
@@ -63,6 +82,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `deactivate`, `list`, `invoke`, `audit`), four-layer security gate stack,
   three Claude Code hooks, two slash commands.
 
+[0.1.4]: https://github.com/Epiphytic/hotskills/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Epiphytic/hotskills/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Epiphytic/hotskills/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Epiphytic/hotskills/releases/tag/v0.1.1
