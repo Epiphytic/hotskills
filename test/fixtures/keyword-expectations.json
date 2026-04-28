@@ -1,0 +1,45 @@
+{
+  "$comment": "Keyword fixtures for scripts/e2e-claude-keyword.sh (Plan-Phase 6 §6.6). Each entry pairs a user prompt that should trigger the model to call hotskills.search with a query, and a list of must-include skill IDs the search must surface. The names are intentionally vercel-labs/agent-skills entries so they are guaranteed to exist on skills.sh. Rank-jitter is tolerated.",
+  "fixtures": [
+    {
+      "id": "react-best-practices",
+      "prompt": "Review my React components for performance and accessibility issues",
+      "expected_query_terms": ["react"],
+      "must_include_skill_ids": [
+        "skills.sh:vercel-labs/agent-skills:react-best-practices"
+      ]
+    },
+    {
+      "id": "next-app-router",
+      "prompt": "How should I structure routes in a Next.js app router project?",
+      "expected_query_terms": ["next", "router"],
+      "must_include_skill_ids": [
+        "skills.sh:vercel-labs/agent-skills:next-best-practices"
+      ]
+    },
+    {
+      "id": "typescript-generics",
+      "prompt": "Explain the right way to type a generic React hook in TypeScript",
+      "expected_query_terms": ["typescript"],
+      "must_include_skill_ids": [
+        "skills.sh:vercel-labs/agent-skills:typescript-best-practices"
+      ]
+    },
+    {
+      "id": "tailwind-design",
+      "prompt": "Help me apply Tailwind utility classes consistently across my landing page",
+      "expected_query_terms": ["tailwind"],
+      "must_include_skill_ids": [
+        "skills.sh:vercel-labs/agent-skills:tailwind-best-practices"
+      ]
+    },
+    {
+      "id": "shadcn-components",
+      "prompt": "Wire up a shadcn/ui Dialog with Radix primitives",
+      "expected_query_terms": ["shadcn"],
+      "must_include_skill_ids": [
+        "skills.sh:vercel-labs/agent-skills:shadcn-best-practices"
+      ]
+    }
+  ]
+}

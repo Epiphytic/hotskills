@@ -1,0 +1,12 @@
+{
+  "id": "02-mode-auto",
+  "description": "mode=auto — top gate-passing search result auto-activates inline.",
+  "global_config": { "mode": "auto" },
+  "project_config": null,
+  "prompt": "/hotskills react",
+  "assertions": {
+    "search_called": true,
+    "activate_called": true,
+    "auto_activated_count_min": 1
+  }
+}

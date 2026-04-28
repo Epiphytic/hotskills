@@ -1,0 +1,88 @@
+name: Vendor drift check
+
+on:
+  schedule:
+    # Mondays at 12:00 UTC. Cron syntax: m h dom mon dow.
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "vendor/vercel-skills/**"
+      - "scripts/check-vendor-drift.sh"
+      - ".github/workflows/vendor-drift.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run drift check
+        id: drift
+        run: |
+          set +e
+          bash scripts/check-vendor-drift.sh > drift-report.txt 2>&1
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "----- drift-report.txt -----"
+          cat drift-report.txt
+          exit 0
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-drift-report
+          path: drift-report.txt
+
+      - name: Open issue on drift (scheduled runs only)
+        if: github.event_name == 'schedule' && steps.drift.outputs.status != '0'
+        uses: actions/github-script@v7
+        env:
+          DRIFT_STATUS: ${{ steps.drift.outputs.status }}
+        with:
+          script: |
+            // Inputs are explicit env vars (DRIFT_STATUS) and a local file
+            // (drift-report.txt) we just wrote ourselves; no untrusted
+            // user input flows into the issue body.
+            const fs = require('fs');
+            const body = fs.readFileSync('drift-report.txt', 'utf8');
+            const driftStatus = process.env.DRIFT_STATUS || 'unknown';
+            const title = `Vendor drift detected — vendor/vercel-skills/ (status ${driftStatus})`;
+            const repo = context.repo;
+            const search = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${repo.owner}/${repo.repo} is:issue is:open in:title "Vendor drift detected"`,
+            });
+            if (search.data.total_count > 0) {
+              core.info(`Existing drift issue open: #${search.data.items[0].number}; appending comment.`);
+              await github.rest.issues.createComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                issue_number: search.data.items[0].number,
+                body: `Drift re-detected on ${new Date().toISOString()}:\n\n\`\`\`\n${body}\n\`\`\``,
+              });
+              return;
+            }
+            await github.rest.issues.create({
+              owner: repo.owner,
+              repo: repo.repo,
+              title,
+              body:
+                `Weekly vendor-drift workflow detected drift in ` +
+                `\`vendor/vercel-skills/\`. See attached \`drift-report.txt\` ` +
+                `artifact for the full diff.\n\n\`\`\`\n${body}\n\`\`\`\n\n` +
+                `_Resolution path: re-sync vendored files at the new upstream ` +
+                `SHA, update \`ATTRIBUTION.md\` and any patch docs, and confirm ` +
+                `\`server/\` build + tests still pass._`,
+              labels: ['vendor-drift'],
+            });
+
+      - name: Fail step on drift (so PR/dispatch runs are red)
+        if: steps.drift.outputs.status != '0'
+        run: |
+          echo "::error::Vendor drift detected — see drift-report.txt artifact"
+          exit 1

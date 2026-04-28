@@ -1,0 +1,41 @@
+# Patch: find-extract-search-api
+
+Extracts only the API search function from upstream `src/find.ts`.
+
+## Rationale
+
+Hotskills' MCP server is non-interactive — it serves `tools/list` /
+`tools/call` JSON-RPC over stdio, not a TTY prompt. Upstream `find.ts`
+is the interactive `npx skills find` command: ANSI escape sequences,
+raw-mode readline, fzf-style render loop, and a `runAdd(...)` shell-out
+on selection. None of that is reachable from the MCP server.
+
+The MCP server only needs `searchSkillsAPI(query)` — a pure HTTP call
+returning `{ name, slug, source, installs }[]`.
+
+## Removed symbols
+
+- `runFind()` interactive entry point
+- `runSearchPrompt()` and all readline / TTY handling
+- ANSI escape constants (`RESET`, `BOLD`, `DIM`, `TEXT`, `CYAN`,
+  `MAGENTA`, `YELLOW`, `HIDE_CURSOR`, `SHOW_CURSOR`, `CLEAR_DOWN`,
+  `MOVE_UP`, `MOVE_TO_COL`)
+- `formatInstalls()` helper (only used by the interactive renderer)
+- `getOwnerRepoFromString()` helper
+- `isRepoPublic()` helper
+- All imports: `readline`, `runAdd`/`parseAddOptions`, `track`,
+  `isRepoPrivate`
+- All `track({event: 'find', ...})` telemetry calls
+
+## Retained symbols
+
+- `SEARCH_API_BASE` constant (unchanged)
+- `SearchSkill` interface (verbatim)
+- `searchSkillsAPI()` function (verbatim)
+
+## Drift-check guidance
+
+The drift-check workflow should diff only the `searchSkillsAPI`
+function and its `SearchSkill` interface against the matching section
+of upstream `src/find.ts`. The interactive UI surface is intentionally
+not vendored and need not be tracked for drift.

@@ -1,0 +1,7 @@
+{
+  "status": "complete",
+  "phase": 4,
+  "slug": "hotskills-mcp-server",
+  "finished_at": "2026-04-23T00:00:00Z",
+  "notes": "Phase-4 complete. 4-layer security gate stack landed (whitelist -> audit -> heuristic -> install), wired into hotskills.activate (post-materialize so heuristic can scan) and hotskills.search (via runGatePreview). hotskills.audit now returns audit data + gate preview + optional heuristic findings. Two phase-3 follow-ups closed alongside: hotskills-0rk (force_whitelist now writes whitelist-activations.log) and hotskills-srt (search gate_status decorated live). Also closed P3 hotskills-kih (Ajv strict mode + pre-validation depth/node-count guard to prevent algorithmic DoS). Nurture added 7 cross-component integration tests in server/src/__tests__/integration/gate-stack.test.ts. Secure added sanitization of partner names in audit gate reason strings (CWE-117). Total tests: 256 pass. Deferred to phase-5: hotskills-w9g (tighter activation.ts fast-path locking) — non-essential optimization, label moved to brains:phase-5. Environment note: subagent Agent tool not available, so grooming/nurture/secure were performed inline by the teammate (model: opus) — the bundled teammate protocol allows this when subagents aren't present. All work is in conventional-commit atomic commits on brains/hotskills-mcp-server; master should rebase/push."
+}

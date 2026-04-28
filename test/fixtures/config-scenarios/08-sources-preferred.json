@@ -1,0 +1,20 @@
+{
+  "id": "08-sources-preferred",
+  "description": "sources with preferred=true — preferred github source wins ordering and bypasses install threshold.",
+  "global_config": {
+    "security": { "min_installs": 1000000 },
+    "sources": [
+      { "type": "github", "owner": "myorg", "repo": "myskills", "preferred": true }
+    ]
+  },
+  "project_config": null,
+  "prompt": "/hotskills my-skill",
+  "synthetic_skill": {
+    "skill_id": "github:myorg/myskills:my-skill",
+    "installs": 0
+  },
+  "assertions": {
+    "activation_blocked": false,
+    "preferred_source_used": true
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "hotskills",
+  "project_id": "5cf0b008-8fad-4bb0-a94b-7fffea2b2cc7"
+}

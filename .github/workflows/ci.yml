@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "brains/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Build
+        run: npm run build
+        working-directory: server
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: server
+
+      - name: Test
+        run: npm test
+        working-directory: server
+
+      - name: E2E (stdio)
+        run: bash scripts/e2e.sh
+
+      # The two claude-driven E2Es (Plan-Phase 6 §6.6 / §6.7) are gated
+      # behind CI_E2E_CLAUDE=1 because they spend API credits and need
+      # the `claude` CLI on the runner. Without that env var they exit 0
+      # with a "skipped" message, so the job stays green for ordinary
+      # PRs.
+      - name: E2E (claude --plugin-dir keyword)
+        env:
+          CI_E2E_CLAUDE: ${{ vars.CI_E2E_CLAUDE || '0' }}
+        run: bash scripts/e2e-claude-keyword.sh
+
+      - name: E2E (claude --plugin-dir config-matrix)
+        env:
+          CI_E2E_CLAUDE: ${{ vars.CI_E2E_CLAUDE || '0' }}
+        run: bash scripts/e2e-claude-config.sh

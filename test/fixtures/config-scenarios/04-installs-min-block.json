@@ -1,0 +1,15 @@
+{
+  "id": "04-installs-min-block",
+  "description": "security.min_installs override — 100k blocks a 5k-install non-allowlisted skill.",
+  "global_config": { "security": { "min_installs": 100000 } },
+  "project_config": null,
+  "prompt": "/hotskills do-thing",
+  "synthetic_skill": {
+    "skill_id": "skills.sh:rando-org/some-pkg:do-thing",
+    "installs": 5000
+  },
+  "assertions": {
+    "activation_blocked": true,
+    "block_reason_matches": "install_threshold:"
+  }
+}

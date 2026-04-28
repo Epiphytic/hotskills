@@ -1,0 +1,11 @@
+{
+  "id": "01-mode-interactive",
+  "description": "mode=interactive (default) — /hotskills with a query presents a list and waits for user selection rather than auto-activating.",
+  "global_config": { "mode": "interactive" },
+  "project_config": null,
+  "prompt": "/hotskills react",
+  "assertions": {
+    "search_called": true,
+    "auto_activated_count": 0
+  }
+}

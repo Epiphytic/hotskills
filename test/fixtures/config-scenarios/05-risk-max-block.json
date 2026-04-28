@@ -1,0 +1,16 @@
+{
+  "id": "05-risk-max-block",
+  "description": "security.risk_max=low blocks a medium-risk skill; risk_max=high allows it.",
+  "global_config": { "security": { "risk_max": "low" } },
+  "project_config": null,
+  "prompt": "/hotskills medium-risk-skill",
+  "synthetic_skill": {
+    "skill_id": "skills.sh:rando-org/some-pkg:medium-risk",
+    "installs": 5000000,
+    "audit": { "snyk": { "risk": "medium" } }
+  },
+  "assertions": {
+    "activation_blocked": true,
+    "block_reason_matches": "audit:snyk:medium"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/epiphytic/hotskills/schemas/config.v1.json",
+  "title": "Hotskills Config v1",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["interactive", "auto", "opportunistic"],
+      "default": "interactive"
+    },
+    "opportunistic": {
+      "type": "boolean",
+      "default": false
+    },
+    "activated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["skill_id", "activated_at"],
+        "additionalProperties": false,
+        "properties": {
+          "skill_id": {
+            "type": "string",
+            "pattern": "^(skills\\.sh|github|git):[^/]+/[^:]+:.+$"
+          },
+          "activated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      },
+      "default": []
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "owner", "repo"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["github", "git"]
+          },
+          "owner": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "repo": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "branch": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
+          "preferred": { "type": "boolean" }
+        }
+      },
+      "default": []
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "risk_max": {
+          "type": "string",
+          "enum": ["safe", "low", "medium", "high", "critical"],
+          "default": "medium"
+        },
+        "min_installs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1000
+        },
+        "audit_partners": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["ath", "socket", "snyk", "zeroleaks"]
+        },
+        "audit_conflict_resolution": {
+          "type": "string",
+          "enum": ["max", "mean", "majority"],
+          "default": "max"
+        },
+        "no_audit_data_policy": {
+          "type": "string",
+          "enum": ["fallback_to_installs", "block", "allow_with_warning"],
+          "default": "fallback_to_installs"
+        },
+        "preferred_sources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "whitelist": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "orgs": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "repos": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "skills": { "type": "array", "items": { "type": "string" }, "default": [] }
+          }
+        },
+        "heuristic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "patterns": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "broad_bash_glob": { "type": "boolean", "default": true },
+                "write_outside_cwd": { "type": "boolean", "default": true },
+                "curl_pipe_sh": { "type": "boolean", "default": true },
+                "raw_network_egress": { "type": "boolean", "default": true }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "search_ttl_seconds": { "type": "integer", "minimum": 0, "default": 3600 },
+        "audit_ttl_seconds": { "type": "integer", "minimum": 0, "default": 86400 },
+        "skills_ttl_seconds": { "type": "integer", "minimum": 0, "default": 604800 }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "find_strategy": {
+          "type": "string",
+          "enum": ["cli", "api", "auto"],
+          "default": "auto"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+# Patch: telemetry-strip-tracking
+
+Removes the telemetry tracking surface from `vendor/vercel-skills/telemetry.ts`.
+
+## Rationale
+
+ADR-002 §Vendoring: "Vendored modules MUST be: `telemetry.ts` (audit subset
+only; strip telemetry tracking)". Hotskills wants the audit API client
+(`fetchAuditData` + types) but does not want a tracking pixel embedded in
+the MCP server binary.
+
+## Removed symbols
+
+- `TELEMETRY_URL` constant
+- `track()` function
+- `setVersion()` function
+- `cliVersion` mutable module-level state
+- `isCI()` function
+- `isEnabled()` function
+- Type aliases / interfaces: `InstallTelemetryData`, `RemoveTelemetryData`,
+  `UpdateTelemetryData`, `FindTelemetryData`, `SyncTelemetryData`,
+  `TelemetryData`
+
+## Retained symbols
+
+- `AUDIT_URL` constant
+- `PartnerAudit` interface
+- `SkillAuditData` type alias
+- `AuditResponse` type alias
+- `fetchAuditData()` function (verbatim)
+
+## Conceptual diff
+
+```diff
+- const TELEMETRY_URL = 'https://add-skill.vercel.sh/t';
+  const AUDIT_URL = 'https://add-skill.vercel.sh/audit';
+
+- interface InstallTelemetryData { ... }
+- interface RemoveTelemetryData { ... }
+- interface UpdateTelemetryData { ... }
+- interface FindTelemetryData { ... }
+- interface SyncTelemetryData { ... }
+- type TelemetryData = ... ;
+-
+- let cliVersion: string | null = null;
+-
+- function isCI(): boolean { ... }
+- function isEnabled(): boolean { ... }
+- export function setVersion(version: string): void { ... }
+
+  // ─── Security audit data ───  (retained verbatim)
+  export interface PartnerAudit { ... }
+  export type SkillAuditData = ...;
+  export type AuditResponse = ...;
+  export async function fetchAuditData(...) { ... }
+
+- export function track(data: TelemetryData): void { ... }
+```
+
+## Drift-check guidance
+
+The vendor-drift CI workflow (`hotskills-35o`) MUST apply this patch in
+reverse before diffing the upstream `src/telemetry.ts` against the
+vendored copy. A simple approximation: strip everything between
+`vendored-from-END` and the `// ─── Security audit data ───` divider in
+the vendored file, then diff only the audit subset against the matching
+section of upstream.
