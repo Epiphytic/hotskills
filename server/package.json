@@ -11,7 +11,7 @@
     "prebuild": "node scripts/sync-vendor.mjs",
     "build": "tsc && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/schemas',{recursive:true});cpSync('src/schemas/config.v1.json','dist/schemas/config.v1.json');cpSync('src/schemas/state.v1.json','dist/schemas/state.v1.json');\"",
     "dev": "node scripts/sync-vendor.mjs && tsc --watch",
-    "test": "node --test dist/__tests__/smoke.test.js dist/__tests__/tools.test.js dist/__tests__/cache.test.js dist/__tests__/env.test.js dist/__tests__/audit.test.js dist/__tests__/materialize.test.js dist/__tests__/search.test.js dist/__tests__/migrations.test.js dist/__tests__/skill-id.test.js dist/__tests__/config.test.js dist/__tests__/activation.test.js dist/__tests__/schema-limits.test.js dist/__tests__/tools/activate.test.js dist/__tests__/tools/invoke.test.js dist/__tests__/tools/list.test.js dist/__tests__/tools/deactivate.test.js dist/__tests__/tools/audit.test.js dist/__tests__/integration/activate-invoke-deactivate.test.js dist/__tests__/integration/gate-stack.test.js dist/__tests__/gate/risk.test.js dist/__tests__/gate/whitelist.test.js dist/__tests__/gate/audit-gate.test.js dist/__tests__/gate/heuristic.test.js dist/__tests__/gate/install-gate.test.js dist/__tests__/gate/index.test.js",
+    "test": "node scripts/run-tests.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

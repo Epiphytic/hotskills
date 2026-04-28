@@ -10,9 +10,9 @@
  *     ${HOTSKILLS_CONFIG_DIR}/cache/audit/<owner>-<repo>.json
  */
 
-import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { cacheAgeSeconds, cacheRead, cacheWrite } from './cache.js';
+import { log } from './logger.js';
 import {
   fetchAuditData,
   type AuditResponse,
@@ -65,34 +65,18 @@ function cacheFilePath(parsed: ParsedSkillId): string {
   return join(configDir(), 'cache', 'audit', fname);
 }
 
-function logFilePath(): string {
-  return join(configDir(), 'logs', 'audit-errors.log');
-}
-
 async function logAuditError(
   parsed: ParsedSkillId,
   reason: string,
   extra: Record<string, unknown> = {}
 ): Promise<void> {
-  const path = logFilePath();
-  try {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    // JSON.stringify escapes \n in string values, preserving the
-    // one-line-per-record invariant of this JSONL log file. Tested in
-    // audit.test.ts (hotskills-gu7) — do not bypass.
-    const line =
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        level: 'warn',
-        event: 'audit_error',
-        skill_id: `${parsed.source}:${parsed.owner}/${parsed.repo}:${parsed.slug}`,
-        reason,
-        ...extra,
-      }) + '\n';
-    await appendFile(path, line, { mode: 0o600 });
-  } catch {
-    // Logging failures must never propagate to callers.
-  }
+  // Routes through the shared logger (server/src/logger.ts). Same JSON-line
+  // shape as before: { ts, level, event, skill_id, reason, ...extra }.
+  await log('audit', 'warn', 'audit_error', {
+    skill_id: `${parsed.source}:${parsed.owner}/${parsed.repo}:${parsed.slug}`,
+    reason,
+    ...extra,
+  });
 }
 
 /**

@@ -19,9 +19,9 @@
  *   line ≤ ~1 KiB by capping matched_entry serialization length.
  */
 
-import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { HotskillsConfig } from '../config.js';
+import { log, logPath } from '../logger.js';
 import type { ParsedSkillId } from '../skill-id.js';
 import { formatSkillId } from '../skill-id.js';
 
@@ -98,58 +98,43 @@ export function matchWhitelist(
 
 const MAX_ENTRY_LEN = 256;
 
-function getConfigDir(opts?: WhitelistOptions): string {
-  const dir = opts?.configDir ?? process.env['HOTSKILLS_CONFIG_DIR'];
-  if (!dir || dir.trim() === '') {
-    throw new Error('HOTSKILLS_CONFIG_DIR is not set');
-  }
-  return dir;
-}
-
 export function whitelistLogPath(configDir: string): string {
   return join(configDir, 'logs', 'whitelist-activations.log');
 }
 
 /**
- * Append one JSON line to whitelist-activations.log.
- *
- * Best-effort: any IO failure is swallowed so the gate decision is never
- * blocked by a logging failure.
+ * Append one JSON line to whitelist-activations.log via the shared logger.
  *
  * Log line shape (matches ADR-004 §Phase 0 verification + §Whitelist log):
- *   { ts, skill_id, scope, matched_entry }
+ *   { ts, level, event, skill_id, scope, matched_entry }
  *
- * Each `matched_entry` is truncated to MAX_ENTRY_LEN to keep the line under
- * Linux's PIPE_BUF (4096) so concurrent appends remain atomic.
+ * `matched_entry` is truncated to MAX_ENTRY_LEN to keep each line well
+ * under Linux's PIPE_BUF (4096) so concurrent appends stay atomic.
  */
 export async function logWhitelistActivation(
   parsedId: ParsedSkillId,
   match: WhitelistMatch,
   opts: WhitelistOptions = {}
 ): Promise<void> {
-  const path = whitelistLogPath(getConfigDir(opts));
   const entry =
     match.matched_entry.length > MAX_ENTRY_LEN
       ? match.matched_entry.slice(0, MAX_ENTRY_LEN) + '…'
       : match.matched_entry;
-  const line =
-    JSON.stringify({
-      ts: new Date().toISOString(),
+  // Resolve path eagerly so callers without HOTSKILLS_CONFIG_DIR get a
+  // clear error (preserves the contract from before the logger refactor).
+  const logOpts = opts.configDir !== undefined ? { configDir: opts.configDir } : undefined;
+  logPath('whitelist', logOpts);
+  await log(
+    'whitelist',
+    'info',
+    'whitelist_activation',
+    {
       skill_id: formatSkillId(parsedId),
       scope: match.scope,
       matched_entry: entry,
-    }) + '\n';
-  try {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    // Node's appendFile uses O_APPEND; on Linux, a single write of
-    // ≤ PIPE_BUF (4096 bytes) is atomic, so concurrent writers never
-    // interleave a partial line. Our line is well under 4096.
-    await appendFile(path, line, { mode: 0o600 });
-  } catch {
-    // Logging failures must never propagate to gate callers. The decision
-    // already happened — we only failed to record it. A future enhancement
-    // could surface this via the structured logger (Phase 6).
-  }
+    },
+    logOpts
+  );
 }
 
 // ─── Public API ───
