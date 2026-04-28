@@ -1,6 +1,6 @@
 {
   "name": "hotskills",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server for hotskills — pre-configured skill management for Claude Code with security gating",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,7 +17,7 @@
   },
   "scripts": {
     "prebuild": "node scripts/sync-vendor.mjs",
-    "build": "tsc && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/schemas',{recursive:true});cpSync('src/schemas/config.v1.json','dist/schemas/config.v1.json');cpSync('src/schemas/state.v1.json','dist/schemas/state.v1.json');\"",
+    "build": "tsc && node -e \"const{cpSync,mkdirSync,chmodSync}=require('fs');mkdirSync('dist/schemas',{recursive:true});cpSync('src/schemas/config.v1.json','dist/schemas/config.v1.json');cpSync('src/schemas/state.v1.json','dist/schemas/state.v1.json');chmodSync('dist/index.js',0o755);\"",
     "dev": "node scripts/sync-vendor.mjs && tsc --watch",
     "test": "node scripts/run-tests.mjs",
     "typecheck": "tsc --noEmit",
