@@ -139,16 +139,14 @@ export async function runActivate(
   const globalConfig = await readGlobalConfig(configDir);
 
   // 3. force_whitelist: append BEFORE running gate so the whitelist layer
-  // matches. Also log to whitelist-activations.log per ADR-004 (closes
-  // hotskills-0rk: the picker confirmation has already happened in slash
-  // command UX; this is the audit trail).
+  // matches. The disk write is deferred to step 7 along with the activated
+  // upsert (one writeProjectConfig per runActivate) so we don't pay two
+  // atomic-replace round-trips on the happy path. The audit-trail log
+  // entry to whitelist-activations.log per ADR-004 is emitted now so a
+  // post-step crash still leaves the audit trail (the in-memory config
+  // change is lost in that case, but a re-run will re-emit and re-write).
   if (input.force_whitelist === true) {
     projectConfig = appendWhitelistSkill(projectConfig, input.skill_id);
-    try {
-      await writeProjectConfig(projectCwd, projectConfig);
-    } catch (err) {
-      return { error: 'config_write_failed', message: (err as Error).message };
-    }
     try {
       await logWhitelistActivation(
         parsedId,

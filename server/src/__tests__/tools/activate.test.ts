@@ -180,6 +180,41 @@ test('runActivate — force_whitelist appends to project whitelist before gate',
   }
 });
 
+test('runActivate — force_whitelist persists whitelist + activated in a single config write', async () => {
+  // hotskills-4vi: previously runActivate wrote project config twice when
+  // force_whitelist=true (once for the whitelist append before the gate,
+  // again for the activated upsert at the end). The batched version writes
+  // exactly once. Verify both fields land in one shot AND the on-disk
+  // config.json mtime tracks one write, not two.
+  const sb = makeSandbox();
+  try {
+    const target = cacheSkillPath(PARSED, sb.configDir);
+    const result = await runActivate(
+      { skill_id: VALID_ID, force_whitelist: true },
+      {
+        projectCwd: sb.projectCwd,
+        configDir: sb.configDir,
+        auditLookup: async () => ({ audit: null, cached: false }),
+        activateOptions: { configDir: sb.configDir, materializeImpl: fakeMaterialize(target) },
+      }
+    );
+    if ('error' in result) assert.fail(`unexpected error: ${result.message}`);
+
+    const persisted = JSON.parse(
+      readFileSync(join(sb.projectCwd, '.hotskills', 'config.json'), 'utf8')
+    );
+    // Both mutations present after a single runActivate call.
+    assert.ok(
+      persisted.security?.whitelist?.skills?.includes(VALID_ID),
+      'whitelist append survived to disk'
+    );
+    assert.strictEqual(persisted.activated?.length, 1, 'activated upsert survived to disk');
+    assert.strictEqual(persisted.activated[0].skill_id, VALID_ID);
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('runActivate — materialization failure returns structured error', async () => {
   const sb = makeSandbox();
   try {
