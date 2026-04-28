@@ -1,6 +1,6 @@
 {
   "name": "hotskills",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "MCP server for hotskills — pre-configured skill management for Claude Code with security gating",
   "type": "module",
   "main": "./dist/index.js",

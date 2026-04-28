@@ -60,15 +60,85 @@ export function _resetCliCache(): void {
 
 /**
  * Resolve the user-configured `find_strategy` to a concrete strategy.
- * `auto` becomes `cli` when `npx` is on PATH, else `api`.
+ * `auto` becomes `api` whenever the API endpoint is reachable; we only
+ * fall back to `cli` (`npx skills find`) if `api` is forced off, since
+ * the API does fuzzy matching across name/source/slug while the CLI's
+ * substring match misses high-install skills (e.g. `obra/superpowers/
+ * requesting-code-review` with 60K+ installs is not surfaced by the
+ * CLI for `code review`, but is the top API result).
  */
 export function resolveFindStrategy(
   configured: FindStrategy,
-  env: NodeJS.ProcessEnv = process.env
+  _env: NodeJS.ProcessEnv = process.env
 ): 'cli' | 'api' {
   if (configured === 'cli') return 'cli';
-  if (configured === 'api') return 'api';
-  return detectCliAvailable(env) ? 'cli' : 'api';
+  return 'api';
+}
+
+/**
+ * Local skills.sh API client. The vendored `searchSkillsAPI` maps
+ * `skill.id` (which is `owner/repo/slug` — the full path) onto the
+ * `slug` field, producing canonicalized IDs like
+ * `skills.sh:obra/superpowers:obra/superpowers/requesting-code-review`.
+ * The API actually exposes a separate `skillId` (just the slug) for
+ * exactly this purpose; we use that. Also propagates `limit` (the
+ * vendored client hardcodes 10).
+ *
+ * Kept alongside the vendored client rather than patched into it so
+ * the upstream sync (scripts/sync-vendor.mjs) stays clean.
+ */
+async function searchSkillsAPILocal(
+  query: string,
+  limit = 25
+): Promise<SearchSkill[]> {
+  const base = process.env['SKILLS_API_URL'] || 'https://skills.sh';
+  try {
+    const url = `${base}/api/search?q=${encodeURIComponent(query)}&limit=${limit}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      skills?: Array<{
+        id?: string;
+        skillId?: string;
+        name?: string;
+        installs?: number;
+        source?: string;
+      }>;
+    };
+    if (!Array.isArray(data?.skills)) return [];
+    return data.skills
+      .filter((s) => typeof s.skillId === 'string' && typeof s.source === 'string')
+      .map((s) => ({
+        name: s.name ?? s.skillId!,
+        slug: s.skillId!,
+        source: s.source!,
+        installs: s.installs ?? 0,
+      }))
+      .sort((a, b) => (b.installs || 0) - (a.installs || 0));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Normalize a free-text query into the form the skills.sh search API
+ * accepts.
+ *
+ * The API's fuzzy-search backend treats whitespace as an end-of-query
+ * marker — `q=code review` returns a schema stub with zero skills, while
+ * `q=code-review` returns 20 ranked matches across `name`, `source`, and
+ * `slug`. Lowercase + collapse runs of whitespace/`_`/`,` into a single
+ * `-` so user-typed phrases (`"code review"`, `"Code Review"`) all
+ * converge on the working hyphenated form. Trims leading/trailing
+ * separators afterwards.
+ *
+ * Single-word queries pass through unchanged (lowercased).
+ */
+export function normalizeQuery(query: string): string {
+  return query
+    .toLowerCase()
+    .replace(/[\s_,]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 // ─── CLI strategy ───
@@ -391,11 +461,17 @@ export async function runSearch(query: string, opts: SearchOptions = {}): Promis
   const configDir = getConfigDir(opts);
   const findStrategy: FindStrategy = opts.findStrategy ?? 'auto';
   const limit = opts.limit ?? 25;
-  const apiClient = opts.apiClient ?? searchSkillsAPI;
+  const apiClient = opts.apiClient ?? ((q: string) => searchSkillsAPILocal(q, limit));
   const cliRunner = opts.cliRunner ?? searchViaCli;
   const decorate = opts.auditDecorator ?? decorateWithAudit;
 
-  const key = buildCacheKey(query, findStrategy, opts.sources);
+  // Normalize the query before fetch + cache lookup. `code review` and
+  // `Code Review` must hit the same cache slot as `code-review` since
+  // the API rejects whitespace; without this they'd each cache empty
+  // result sets independently.
+  const effectiveQuery = normalizeQuery(query);
+
+  const key = buildCacheKey(effectiveQuery, findStrategy, opts.sources);
   const path = cachePath(configDir, 'search', key);
 
   if (!opts.skipCache) {
@@ -415,12 +491,19 @@ export async function runSearch(query: string, opts: SearchOptions = {}): Promis
   const concrete = resolveFindStrategy(findStrategy);
   let raw: Array<SearchSkill | CliResult>;
   if (concrete === 'api') {
-    raw = await apiClient(query);
+    raw = await apiClient(effectiveQuery);
   } else {
-    raw = await cliRunner(query);
+    raw = await cliRunner(effectiveQuery);
   }
 
-  const seeds: SeedEntry[] = raw.map((r) => {
+  // Filter out the schema-stub sentinel that the skills.sh API returns
+  // for some malformed/empty queries (`{source: "owner/repo", name: "skill"}`).
+  // It otherwise outranks real results in the merged response.
+  const filteredRaw = raw.filter(
+    (r) => !(r.source === 'owner/repo' && (r.name === 'skill' || (r as SearchSkill).slug === 'skill'))
+  );
+
+  const seeds: SeedEntry[] = filteredRaw.map((r) => {
     const slug = (r as SearchSkill).slug ?? (r as CliResult).slug ?? r.name;
     const installs = r.installs ?? 0;
     return {
