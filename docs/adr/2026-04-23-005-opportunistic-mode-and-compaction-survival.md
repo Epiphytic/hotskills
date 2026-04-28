@@ -1,7 +1,7 @@
 # ADR-005: Opportunistic mode and compaction-survival hooks
 
 **Date:** 2026-04-23
-**Status:** Accepted
+**Status:** Accepted (amended 2026-04-28 — see Amendment 1)
 **Decision makers:** liam.helmer@gmail.com (user), local subagent, star-chamber
 
 ## Context
@@ -23,7 +23,9 @@ This guarantees activated skills are visible to the model immediately after comp
 
 ### Hook declarations (`hooks/hooks.json`)
 
-The plugin MUST declare exactly these three hook handlers, all invoking the same script with different `--event` flags:
+> **NOTE:** The shape originally specified in this section was guesswork and does not match Claude Code's hook loader. **Amendment 1 (2026-04-28)** at the bottom of this ADR supersedes this snippet with the real on-disk format. Implementations MUST use the Amendment 1 format. The original snippet is preserved here only for historical context.
+
+The plugin MUST declare exactly these three hook handlers, all invoking the same script with different `--event` flags. **Use the format from Amendment 1, not the snippet below.**
 
 ```json
 {
@@ -181,3 +183,67 @@ stateDiagram-v2
 ## Council Input
 
 Star-chamber flagged "hook plumbing for compaction/clear-context survival" as a load-bearing assumption — addressed by: (a) PostCompact AND SessionStart now emit the activated-skills reminder directly (not just set a flag); (b) UserPromptSubmit kept as per-turn safety net; (c) Phase 0 verification items added for the hook-stdout-injection assumption. The user's mid-questionnaire question on this topic drove the design fix; documenting it in Council Input for posterity.
+
+## Amendment 1 — Hook declaration format (2026-04-28)
+
+**Trigger:** During Phase 5 implementation, the teammate inspected real Claude Code plugins under `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/{hookify,learning-output-style,security-guidance,explanatory-output-style}/hooks/hooks.json` and observed that the format documented in `## Requirements (RFC 2119) → Hook declarations` does not match what Claude Code's hook loader actually accepts. The original flat-array snippet was Phase 1 guesswork; the loader requires a nested object keyed by event name.
+
+**Decision:** Replace the original `hooks/hooks.json` snippet with the real on-disk format. The shipped `hooks/hooks.json` (commit `70f3e95`, `2d67395`) already uses this format; this amendment brings the ADR back into alignment.
+
+### Corrected hook-declarations format (supersedes the original snippet)
+
+The plugin MUST declare exactly these three hook handlers, all invoking the same script with different `--event` flags, using the nested-object format Claude Code expects:
+
+```json
+{
+  "description": "Hotskills hooks per ADR-005 — emit activated-skills + opportunistic system-reminders on PostCompact, SessionStart, and UserPromptSubmit so the model retains awareness across compaction and session boundaries.",
+  "hooks": {
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh\" --event=PostCompact"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh\" --event=SessionStart"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh\" --event=UserPromptSubmit"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Requirements (RFC 2119) — supersede the corresponding lines in §Hook declarations
+
+- The top-level `hooks` field MUST be a JSON object whose keys are Claude Code event names (`PostCompact`, `SessionStart`, `UserPromptSubmit`), not a JSON array.
+- Each event key's value MUST be a JSON array. Each element of that array MUST be an object containing a `hooks` array of `{type: "command", command: <string>}` entries. A `matcher` field on the element MAY be present (e.g., for `PreToolUse`); the three hotskills events do not require one.
+- The `command` MUST be a `bash`-invoked invocation of `${CLAUDE_PLUGIN_ROOT}/scripts/inject-reminders.sh` with the appropriate `--event=<EventName>` flag, with the path quoted to survive spaces.
+- Per-event behavior, reminder content, enumeration limits, performance constraints, mode interaction, and `state.json` schema specified elsewhere in this ADR are unchanged. Only the wire format of `hooks/hooks.json` is amended.
+
+### Rationale
+
+- Aligns the ADR with what Claude Code actually loads. Without this fix, a literal implementation of the original snippet produces non-functional hooks.
+- The shipped `hooks/hooks.json` is already correct (verified by 14 scenarios / 44 assertions in `scripts/test-inject-reminders.sh`); this is a documentation-only amendment.
+
+### Plan impact
+
+- No plan-task changes — the implementation in commits `70f3e95` and `2d67395` already complies with this amendment. Phase-6 E2E tests (Tasks 6.6 / 6.7) MAY assert against the Amendment 1 format directly.
