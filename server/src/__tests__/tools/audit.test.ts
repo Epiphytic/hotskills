@@ -112,6 +112,80 @@ test('runAuditTool — no audit data returns audit:null and gate decision', asyn
   }
 });
 
+// ─── install_count integration (hotskills-followup) ───
+
+const NON_ALLOWLISTED_ID = 'skills.sh:random-user/some-repo:my-skill';
+
+test('runAuditTool — without install_count, install layer is skipped (not a fake 0-count block)', async () => {
+  const sb = makeSandbox();
+  try {
+    const out = await runAuditTool(
+      { skill_id: NON_ALLOWLISTED_ID },
+      {
+        configDir: sb.configDir,
+        projectCwd: sb.projectCwd,
+        auditLookup: fakeLookup(
+          { snyk: { risk: 'safe', analyzedAt: '2026-04-01T00:00:00Z' } },
+          false
+        ),
+      }
+    );
+    if ('error' in out) assert.fail(`unexpected: ${out.message}`);
+    assert.strictEqual(out.gate.layers.install, 'skipped');
+    // No `details.install` should be present when the layer is skipped —
+    // we don't want the audit response to invent an `install_threshold:0:N`.
+    assert.strictEqual(out.gate.details.install, undefined);
+    assert.strictEqual(out.gate.decision, 'allow');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runAuditTool — with install_count above min_installs, install layer allows', async () => {
+  const sb = makeSandbox();
+  try {
+    const out = await runAuditTool(
+      { skill_id: NON_ALLOWLISTED_ID, install_count: 5_000 },
+      {
+        configDir: sb.configDir,
+        projectCwd: sb.projectCwd,
+        auditLookup: fakeLookup(
+          { snyk: { risk: 'safe', analyzedAt: '2026-04-01T00:00:00Z' } },
+          false
+        ),
+      }
+    );
+    if ('error' in out) assert.fail(`unexpected: ${out.message}`);
+    assert.strictEqual(out.gate.layers.install, 'allow');
+    assert.strictEqual(out.gate.decision, 'allow');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runAuditTool — with low install_count, install layer honestly blocks', async () => {
+  const sb = makeSandbox();
+  try {
+    const out = await runAuditTool(
+      { skill_id: NON_ALLOWLISTED_ID, install_count: 5 },
+      {
+        configDir: sb.configDir,
+        projectCwd: sb.projectCwd,
+        auditLookup: fakeLookup(
+          { snyk: { risk: 'safe', analyzedAt: '2026-04-01T00:00:00Z' } },
+          false
+        ),
+      }
+    );
+    if ('error' in out) assert.fail(`unexpected: ${out.message}`);
+    assert.strictEqual(out.gate.layers.install, 'block');
+    assert.strictEqual(out.gate.decision, 'block');
+    assert.match(out.gate.reason ?? '', /install_threshold:5:1000/);
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('runAuditTool — heuristic enabled + materialized → includes findings', async () => {
   const sb = makeSandbox();
   try {

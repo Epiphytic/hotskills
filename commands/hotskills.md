@@ -46,7 +46,11 @@ This is a security-sensitive action. Per ADR-004 §Whitelist override
 surface, you MUST display the warning below, get explicit user
 confirmation, and only then mutate config.
 
-1. Call `hotskills.audit({ skill_id })` to get the current risk picture.
+1. Call `hotskills.audit({ skill_id, install_count })` to get the current risk
+   picture. If a recent search produced an `installs` value for this skill,
+   pass it as `install_count` so the install layer of the gate preview is
+   evaluated honestly. Without it, the install layer is reported as
+   `'skipped'` rather than fabricating a 0-count block.
 2. Print this warning verbatim, filling in the bracketed slots:
 
    > **Whitelist warning** — you are about to bypass the security gate

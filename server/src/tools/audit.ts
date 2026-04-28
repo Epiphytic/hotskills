@@ -37,6 +37,14 @@ export interface AuditToolDeps {
 
 export interface AuditToolInput {
   skill_id: string;
+  /**
+   * Optional install count from a prior `hotskills.search` result. When
+   * provided, the install layer of the gate preview is evaluated against
+   * `min_installs`. When omitted, the install layer is reported as
+   * `'skipped'` rather than fabricating a 0 count and producing a
+   * misleading `install_threshold:0:N` block.
+   */
+  install_count?: number;
 }
 
 export interface AuditToolSuccess {
@@ -115,13 +123,18 @@ export async function runAuditTool(
 
   // 5. Compute gate preview using the same audit data we just fetched.
   // We pass an auditLookup that returns the lookup we already have so the
-  // preview doesn't refetch.
+  // preview doesn't refetch. When install_count is supplied, the install
+  // layer evaluates honestly; when omitted, skip the install layer rather
+  // than blocking on a fabricated 0 count.
   const inlineLookup = async () => lookup;
+  const hasInstallCount = typeof input.install_count === 'number';
   let gate: GateOutcome;
   try {
     gate = await runGatePreview(parsedId, merged, {
       configDir,
-      installCount: 0, // unknown at audit-tool time; install gate may report block
+      ...(hasInstallCount
+        ? { installCount: input.install_count! }
+        : { skipInstallGate: true }),
       auditGateOptions: { auditLookup: inlineLookup },
     });
   } catch (err) {
@@ -159,10 +172,21 @@ export function registerAudit(server: McpServer): void {
     'Return cached security audit data for a skill from add-skill.vercel.sh/audit',
     {
       skill_id: z.string().describe('Fully-qualified skill ID: <source>:<owner>/<repo>:<slug>'),
+      install_count: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe(
+          'Install count from a prior search result. When provided, the install layer of the gate preview is evaluated; when omitted, the install layer is skipped (avoids a misleading install_threshold:0:N block).'
+        ),
     },
-    async ({ skill_id }) => {
+    async ({ skill_id, install_count }) => {
       try {
-        const result = await runAuditTool({ skill_id });
+        const result = await runAuditTool({
+          skill_id,
+          ...(typeof install_count === 'number' ? { install_count } : {}),
+        });
         if ('error' in result) {
           return {
             isError: true,
