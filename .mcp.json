@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "hotskills": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "hotskills"],
       "env": {
         "HOTSKILLS_CONFIG_DIR": "${HOME}/.config/hotskills",
         "HOTSKILLS_PROJECT_CWD": "${CLAUDE_PROJECT_DIR}"

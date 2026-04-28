@@ -1,9 +1,17 @@
 {
-  "name": "@epiphytic/hotskills-server",
+  "name": "hotskills",
   "version": "0.1.0",
-  "description": "MCP server for hotskills — skill management for Claude Code",
+  "description": "MCP server for hotskills — pre-configured skill management for Claude Code with security gating",
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "hotskills": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22.0.0"
   },
@@ -12,7 +20,32 @@
     "build": "tsc && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/schemas',{recursive:true});cpSync('src/schemas/config.v1.json','dist/schemas/config.v1.json');cpSync('src/schemas/state.v1.json','dist/schemas/state.v1.json');\"",
     "dev": "node scripts/sync-vendor.mjs && tsc --watch",
     "test": "node scripts/run-tests.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "skills",
+    "security",
+    "model-context-protocol"
+  ],
+  "author": {
+    "name": "Liam Helmer",
+    "email": "liam.helmer@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/epiphytic/hotskills",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/epiphytic/hotskills.git",
+    "directory": "server"
+  },
+  "bugs": {
+    "url": "https://github.com/epiphytic/hotskills/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
