@@ -21,6 +21,14 @@
 #   script exits 0 with a "skipped" message so CI runs that don't have
 #   API credits configured still succeed.
 #
+# Security note:
+#   We pass `--permission-mode bypassPermissions` because non-interactive
+#   `--print` sessions cannot prompt for tool approval. This is safe for
+#   this E2E because (a) the temp project dir is freshly created under
+#   /tmp on every run, (b) HOTSKILLS_DEV_OVERRIDE confines hotskills
+#   writes to that temp tree, and (c) the script is gated behind
+#   CI_E2E_CLAUDE=1 so it does not execute on every PR.
+#
 # Local developers can always run this with:
 #   CI_E2E_CLAUDE=1 bash scripts/e2e-claude-keyword.sh
 #

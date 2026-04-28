@@ -113,13 +113,14 @@ for FIXTURE in "${FIXTURES[@]}"; do
   fi
 
   CLAUDE_LOG="${TMPROOT}/${ID}-claude.log"
-  if ! env -i \
-       HOME="${HOME}" \
+  # NOTE: keep claude's full inherited env (HOME, OAuth tokens, etc.) and
+  # add the HOTSKILLS_* + scrubbed PATH on top. `env` without `-i`
+  # preserves anything the running shell already exports.
+  if ! env \
        HOTSKILLS_CONFIG_DIR="${CONFIG_DIR}" \
        HOTSKILLS_PROJECT_CWD="${PROJECT_CWD}" \
        HOTSKILLS_DEV_OVERRIDE="${TMPROOT}" \
        HOTSKILLS_DEBUG=true \
-       PATH="${PATH}" \
        "${EXTRA_ENV[@]}" \
        claude \
          --plugin-dir "${REPO_ROOT}" \
