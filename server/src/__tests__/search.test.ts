@@ -39,6 +39,81 @@ test('resolveFindStrategy auto picks api when npx is not on PATH', () => {
   _resetCliCache();
 });
 
+test('resolveFindStrategy auto picks api even when npx IS on PATH', () => {
+  // The skills.sh API does fuzzy matching across name/source/slug; the
+  // CLI does substring-on-slug only and misses high-install skills like
+  // obra/superpowers/requesting-code-review. Auto must prefer the API.
+  _resetCliCache();
+  const got = resolveFindStrategy('auto', { PATH: '/usr/bin' });
+  assert.strictEqual(got, 'api');
+  _resetCliCache();
+});
+
+// ─── normalizeQuery ───
+
+import { normalizeQuery } from '../tools/search.js';
+
+test('normalizeQuery — single token passes through, lowercased', () => {
+  assert.strictEqual(normalizeQuery('react'), 'react');
+  assert.strictEqual(normalizeQuery('React'), 'react');
+});
+
+test('normalizeQuery — whitespace collapses to single hyphen', () => {
+  // skills.sh API rejects whitespace; this is the user-typed phrase
+  // form that must converge on `code-review` to surface the
+  // 60K+ install obra/superpowers/requesting-code-review skill.
+  assert.strictEqual(normalizeQuery('code review'), 'code-review');
+  assert.strictEqual(normalizeQuery('Code Review'), 'code-review');
+  assert.strictEqual(normalizeQuery('code  review'), 'code-review');
+  assert.strictEqual(normalizeQuery('  code review  '), 'code-review');
+});
+
+test('normalizeQuery — underscore and comma also collapse', () => {
+  assert.strictEqual(normalizeQuery('code_review'), 'code-review');
+  assert.strictEqual(normalizeQuery('code,review'), 'code-review');
+});
+
+test('normalizeQuery — preexisting hyphens preserved', () => {
+  assert.strictEqual(normalizeQuery('code-review'), 'code-review');
+  assert.strictEqual(normalizeQuery('react-best-practices'), 'react-best-practices');
+});
+
+// ─── runSearch sentinel filter ───
+
+test('runSearch — schema-stub sentinel "owner/repo:skill" is filtered out', async () => {
+  const cfg = makeConfigDir();
+  const apiClient = async () => [
+    { name: 'skill', slug: 'skill', source: 'owner/repo', installs: 0 }, // sentinel
+    { name: 'real', slug: 'real', source: 'a/b', installs: 100 },
+  ];
+  const got = await runSearch('whatever', {
+    configDir: cfg,
+    findStrategy: 'api',
+    apiClient,
+    auditDecorator: noopAuditDecorator,
+    skipCache: true,
+  });
+  assert.strictEqual(got.results.length, 1);
+  assert.strictEqual(got.results[0]!.skill_id, 'skills.sh:a/b:real');
+});
+
+test('runSearch — multi-word query is normalized before reaching apiClient', async () => {
+  const cfg = makeConfigDir();
+  const seen: string[] = [];
+  const apiClient = async (q: string) => {
+    seen.push(q);
+    return [];
+  };
+  await runSearch('Code Review', {
+    configDir: cfg,
+    findStrategy: 'api',
+    apiClient,
+    auditDecorator: noopAuditDecorator,
+    skipCache: true,
+  });
+  assert.deepStrictEqual(seen, ['code-review']);
+});
+
 // ─── runSearch — api strategy ───
 
 test('runSearch api strategy returns shaped results with cached:false on first call', async () => {

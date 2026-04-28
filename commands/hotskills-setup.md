@@ -49,34 +49,23 @@ to use. Use this exact question and these two options:
   - `"User (recommended)"` — `"Available across all your projects. Stored in your user MCP config."`
   - `"Project (this repo)"` — `"Committed to this repo's .mcp.json — every collaborator gets hotskills when they open the repo."`
 
-Then run the appropriate `claude mcp add` command. The server reads
-`HOTSKILLS_PROJECT_CWD` from `${CLAUDE_PROJECT_DIR}` (substituted at
-launch by Claude Code) and `HOTSKILLS_CONFIG_DIR` from `${HOME}`:
+Then run the appropriate `claude mcp add` command. No env vars are
+required — the server defaults `HOTSKILLS_PROJECT_CWD` to the launch
+cwd (which is the project dir) and `HOTSKILLS_CONFIG_DIR` to
+`${HOME}/.config/hotskills`. Override either by passing `-e KEY=value`
+to `claude mcp add` only if you need a non-default location.
 
-For **User scope**:
+For **User scope** (recommended):
 
 ```bash
-claude mcp add -s user \
-  -e HOTSKILLS_CONFIG_DIR="${HOME}/.config/hotskills" \
-  -e 'HOTSKILLS_PROJECT_CWD=${CLAUDE_PROJECT_DIR}' \
-  hotskills -- npx -y hotskills
+claude mcp add -s user hotskills -- npx -y hotskills
 ```
 
 For **Project scope**:
 
 ```bash
-claude mcp add -s project \
-  -e HOTSKILLS_CONFIG_DIR="${HOME}/.config/hotskills" \
-  -e 'HOTSKILLS_PROJECT_CWD=${CLAUDE_PROJECT_DIR}' \
-  hotskills -- npx -y hotskills
+claude mcp add -s project hotskills -- npx -y hotskills
 ```
-
-> **Note on quoting**: the inner `${CLAUDE_PROJECT_DIR}` is single-quoted
-> so the shell preserves the literal `${...}`; Claude Code substitutes
-> it when launching the server. The outer `${HOME}` IS expanded by the
-> shell — that's intentional, since we want the user's actual home path
-> stored in the MCP config (Claude Code does not substitute `${HOME}`
-> in user-scope MCP entries).
 
 After registration, **the server will not be reachable in the current
 session** — Claude Code only spawns MCP servers at session boot. Tell

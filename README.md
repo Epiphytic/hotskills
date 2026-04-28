@@ -4,9 +4,11 @@ Pre-configured skill management for Claude Code — discover, activate, and invo
 
 ## Status
 
-v0 — usable on the development branch (`brains/hotskills-mcp-server`). All six MCP tools, the four-layer security gate stack, the three Claude Code hooks, and the two slash commands are wired up. Full test coverage: 274 server tests + 44 hook bash assertions + an automated stdio E2E.
+v0.1.x — published on npm as [`hotskills`](https://www.npmjs.com/package/hotskills) and consumed by the plugin via `npx -y hotskills`. All six MCP tools, the four-layer security gate stack, the three Claude Code hooks, and the two slash commands are wired up. Full test coverage: 287 server tests + 44 hook bash assertions + a stdio E2E that runs against the published bin (`scripts/e2e-npx.sh`).
 
 ## Install
+
+The MCP server is published on npm; the plugin's `.mcp.json` launches it via `npx -y hotskills`, so there's no local build step.
 
 In Claude Code:
 
@@ -19,6 +21,8 @@ Or for one-off use without permanent install:
 ```
 claude --plugin-dir <path-to-this-repo>
 ```
+
+Then run `/hotskills-setup` once (or `claude mcp add -s user hotskills -- npx -y hotskills` directly) to register the MCP server in your user or project scope.
 
 You'll see five new things in the session:
 
@@ -38,14 +42,13 @@ This creates `~/.config/hotskills/config.json` with a sensible default security 
 
 ## Prerequisites
 
-- **Node.js ≥ 22** — the MCP server is ESM with native node:test.
+- **Node.js ≥ 22** — the MCP server is ESM with native node:test. `npx` (bundled with npm) launches the server.
 - **`git` ≥ 2.25** — only required if you configure GitHub-typed sources (uses `--filter=blob:none --sparse`).
-- **`npx` (optional)** — when present, hotskills.search prefers `npx skills find` for local-first discovery; falls back to the skills.sh search API otherwise.
 - **`jq`** — required by the hook script (`scripts/inject-reminders.sh`).
 
 ## How it works
 
-1. **Discovery.** `hotskills.search "react"` queries skills.sh (via API or `npx skills find`) and decorates each result with audit data and a gate preview. Results are cached on disk for 1 hour.
+1. **Discovery.** `hotskills.search "react"` queries the skills.sh API (fuzzy match across name/source/slug) and decorates each result with audit data and a gate preview. Multi-word queries (`"code review"`) are normalized to hyphenated form (`code-review`) before the API call, since skills.sh treats whitespace as end-of-query. Results are cached on disk for 1 hour.
 2. **Security gating.** `hotskills.activate` runs the four-layer gate stack: whitelist → audit (snyk/socket/etc.) → heuristic (opt-in static scanner) → install threshold + author allowlist. First BLOCK short-circuits.
 3. **Materialization.** Allowed skills are materialized to `~/.config/hotskills/cache/skills/<source>/<owner>/<repo>/<slug>/` — using vendored `blob.ts` for `skills.sh:` IDs or `git sparse-checkout` for `github:` IDs.
 4. **Manifest fast-path.** Re-activation with the same content SHA-256 returns `reused: true` without any network. Concurrent activators converge on a single materialization via O_EXCL locks.
@@ -131,8 +134,9 @@ Two files; project wins for scalars, union wins for lists.
 
 | Symptom | Probable cause | Fix |
 | :--- | :--- | :--- |
+| MCP shows `✗ Failed to connect` after install | First-launch install hadn't finished, or registered server is in a stale session | Run `/mcp` to reconnect once. If persistent, verify `npx -y hotskills` works at the shell. v0.1.1+ tolerates missing `${CLAUDE_PROJECT_DIR}` substitution. |
 | `audit API unreachable` | `add-skill.vercel.sh` is down or DNS-blocked | Set `security.no_audit_data_policy: "fallback_to_installs"` (default) — activation continues using install threshold alone |
-| `npx not on PATH` warning at setup | Node is installed without npm shims | hotskills falls back to `find_strategy: "api"` automatically; ignore the warning |
+| `npx not on PATH` at setup | Node is installed without npm shims | The MCP server is launched via `npx -y hotskills`, so this is fatal. Install Node ≥ 22 from nodejs.org or your distro's package manager. |
 | `lock timeout (30000ms)` | A previous activation crashed mid-write | Remove the stale lock: `rm ~/.config/hotskills/cache/skills/<source>/<owner>/<repo>/<slug>.lock` |
 | `git --version too old (need >= 2.25)` | System git is older than sparse-checkout support | Upgrade git, or remove `github:` sources from your config |
 | `gate_blocked: install_threshold:N:M` | Skill has fewer than `min_installs` and isn't in the author allowlist | Lower `security.min_installs` for that project, or add `force_whitelist: true` to the activate call (after reviewing the warning) |
@@ -145,7 +149,15 @@ Two files; project wins for scalars, union wins for lists.
 cd server
 npm install
 npm run build
-npm test          # runs all 274 tests
+npm test          # runs all 287 tests
+```
+
+To exercise the npm-published path locally without re-publishing, use `npm link`:
+
+```sh
+cd server && npm link        # symlink the working copy globally
+bash scripts/e2e-npx.sh      # E2E roundtrip against the local linked code
+npm unlink -g hotskills      # restore registry-resolution
 ```
 
 End-to-end against the real MCP server over stdio:
