@@ -11,12 +11,22 @@ function makeTempDir(): string {
 
 // ─── getProjectCwd ───
 
-test('getProjectCwd throws when HOTSKILLS_PROJECT_CWD is unset', () => {
-  assert.throws(() => getProjectCwd({} as NodeJS.ProcessEnv), ConfigError);
+test('getProjectCwd falls back to process.cwd() when HOTSKILLS_PROJECT_CWD is unset', () => {
+  // Defaulting (rather than failing) lets the server connect even when
+  // an MCP client doesn't expand `${CLAUDE_PROJECT_DIR}` placeholders in
+  // env-var values. Claude Code spawns servers with cwd = project dir.
+  const got = getProjectCwd({} as NodeJS.ProcessEnv);
+  assert.strictEqual(got, process.cwd());
 });
 
-test('getProjectCwd throws when HOTSKILLS_PROJECT_CWD is empty string', () => {
-  assert.throws(() => getProjectCwd({ HOTSKILLS_PROJECT_CWD: '   ' }), ConfigError);
+test('getProjectCwd falls back to process.cwd() when HOTSKILLS_PROJECT_CWD is empty string', () => {
+  const got = getProjectCwd({ HOTSKILLS_PROJECT_CWD: '   ' });
+  assert.strictEqual(got, process.cwd());
+});
+
+test('getProjectCwd falls back to process.cwd() on unsubstituted ${...} placeholder', () => {
+  const got = getProjectCwd({ HOTSKILLS_PROJECT_CWD: '${CLAUDE_PROJECT_DIR}' });
+  assert.strictEqual(got, process.cwd());
 });
 
 test('getProjectCwd throws when the path does not exist', () => {
