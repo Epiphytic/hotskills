@@ -144,3 +144,170 @@ test('hotskills.search Zod validation rejects missing query', async () => {
   const text = r?.result?.content?.[0]?.text ?? '';
   assert.ok(/query/i.test(text), `error message references missing "query" param: ${text}`);
 });
+
+// ─── hotskills-rrz: input-schema shape assertions for all 6 tools ───
+//
+// ADR-001 §Tool surface pins the six-tool surface as a versioned contract.
+// These assertions make the JSON-Schema shape (required fields, types,
+// enum values) load-bearing in CI so an accidental rename, type widening,
+// or removed required field trips a red test before reaching users.
+
+interface ToolSchema {
+  name: string;
+  inputSchema?: {
+    type?: string;
+    properties?: Record<string, { type?: string; enum?: unknown[]; default?: unknown }>;
+    required?: string[];
+  };
+}
+
+async function fetchToolsList(): Promise<Map<string, ToolSchema>> {
+  const responses = await runMcpSession(
+    [INIT_MSG, INITIALIZED_NOTIF, { jsonrpc: '2.0', id: 99, method: 'tools/list', params: {} }],
+    [1, 99]
+  );
+  const r = responses.get(99) as { result?: { tools?: ToolSchema[] } } | undefined;
+  const tools = r?.result?.tools ?? [];
+  return new Map(tools.map((t) => [t.name, t]));
+}
+
+test('hotskills tools — input schemas declare expected required fields and types', async () => {
+  const byName = await fetchToolsList();
+
+  // Each row: tool name, required fields, all expected property names.
+  // Optional/required come from the tool's z.object literal (see
+  // server/src/tools/*.ts). Adjust this table when a tool surface changes
+  // — that's the point.
+  const expectations: Array<{
+    name: string;
+    required: string[];
+    propsSubset: string[];
+  }> = [
+    { name: 'hotskills.search', required: ['query'], propsSubset: ['query', 'limit', 'sources'] },
+    {
+      name: 'hotskills.activate',
+      required: ['skill_id'],
+      propsSubset: ['skill_id', 'force_whitelist', 'install_count'],
+    },
+    { name: 'hotskills.deactivate', required: ['skill_id'], propsSubset: ['skill_id'] },
+    { name: 'hotskills.list', required: [], propsSubset: ['scope'] },
+    { name: 'hotskills.invoke', required: ['skill_id'], propsSubset: ['skill_id', 'args'] },
+    { name: 'hotskills.audit', required: ['skill_id'], propsSubset: ['skill_id'] },
+  ];
+
+  for (const exp of expectations) {
+    const tool = byName.get(exp.name);
+    assert.ok(tool, `tool ${exp.name} present in tools/list`);
+    const schema = tool!.inputSchema;
+    assert.ok(schema, `tool ${exp.name} has inputSchema`);
+    assert.strictEqual(schema!.type, 'object', `tool ${exp.name} inputSchema.type is "object"`);
+
+    const actualRequired = new Set(schema!.required ?? []);
+    for (const r of exp.required) {
+      assert.ok(actualRequired.has(r), `tool ${exp.name} requires "${r}"`);
+    }
+    // Optional fields MUST NOT appear in required[].
+    for (const p of exp.propsSubset) {
+      if (!exp.required.includes(p)) {
+        assert.ok(
+          !actualRequired.has(p),
+          `tool ${exp.name}: "${p}" is optional and must not be in required[]`
+        );
+      }
+    }
+
+    const props = schema!.properties ?? {};
+    for (const p of exp.propsSubset) {
+      assert.ok(p in props, `tool ${exp.name} declares property "${p}"`);
+    }
+  }
+});
+
+test('hotskills.list — scope enum offers project|global|merged with merged default', async () => {
+  // ADR-003 §Tool surface pins these enum values; lock them in.
+  const byName = await fetchToolsList();
+  const list = byName.get('hotskills.list');
+  assert.ok(list, 'hotskills.list present');
+  const scope = list!.inputSchema?.properties?.scope;
+  assert.ok(scope, 'scope property declared');
+  const en = scope!.enum;
+  assert.ok(Array.isArray(en), 'scope is an enum');
+  assert.deepStrictEqual(
+    [...(en as string[])].sort(),
+    ['global', 'merged', 'project'],
+    'scope enum values match ADR-003'
+  );
+  assert.strictEqual(scope!.default, 'merged', 'scope default is "merged"');
+});
+
+// ─── Table-driven stub coverage for tools that have a Zod-validation gate ───
+//
+// Each row exercises the tool's required-field validation by calling it
+// with arguments missing a required field, asserting the MCP SDK reports
+// isError:true and references the missing param name. Tools with no
+// required field (hotskills.list) are exercised separately with empty args
+// to confirm a non-error response shape.
+
+test('hotskills tools — required-field validation rejects empty arguments', async () => {
+  // Each tool that has a required field is called with arguments:{}; we
+  // assert isError:true and an error text mentioning the missing field.
+  const cases: Array<{ tool: string; missing: string }> = [
+    { tool: 'hotskills.activate', missing: 'skill_id' },
+    { tool: 'hotskills.deactivate', missing: 'skill_id' },
+    { tool: 'hotskills.invoke', missing: 'skill_id' },
+    { tool: 'hotskills.audit', missing: 'skill_id' },
+  ];
+
+  // Run all cases in one MCP session for speed (server spawn is the
+  // expensive part). Each case gets a unique JSON-RPC id.
+  const baseId = 200;
+  const messages: object[] = [INIT_MSG, INITIALIZED_NOTIF];
+  cases.forEach((c, i) => {
+    messages.push({
+      jsonrpc: '2.0',
+      id: baseId + i,
+      method: 'tools/call',
+      params: { name: c.tool, arguments: {} },
+    });
+  });
+  const expectedIds = [1, ...cases.map((_, i) => baseId + i)];
+  const responses = await runMcpSession(messages, expectedIds);
+
+  for (let i = 0; i < cases.length; i += 1) {
+    const c = cases[i];
+    const r = responses.get(baseId + i) as
+      | { result?: { isError?: boolean; content?: Array<{ text: string }> } }
+      | undefined;
+    assert.ok(r, `${c.tool}: response received`);
+    assert.strictEqual(
+      r?.result?.isError,
+      true,
+      `${c.tool}: isError true on missing ${c.missing}`
+    );
+    const text = r?.result?.content?.[0]?.text ?? '';
+    assert.ok(
+      new RegExp(c.missing, 'i').test(text),
+      `${c.tool}: error references missing "${c.missing}" — got: ${text.slice(0, 200)}`
+    );
+  }
+});
+
+test('hotskills.list — accepts empty arguments and returns a content[] envelope', async () => {
+  // hotskills.list has no required field (scope defaults to "merged").
+  // With an empty sandbox, runList returns an empty merged list.
+  const responses = await runMcpSession(
+    [INIT_MSG, INITIALIZED_NOTIF, { jsonrpc: '2.0', id: 300, method: 'tools/call', params: { name: 'hotskills.list', arguments: {} } }],
+    [1, 300]
+  );
+  const r = responses.get(300) as
+    | { result?: { isError?: boolean; content?: Array<{ type: string; text: string }> } }
+    | undefined;
+  assert.ok(r, 'list response received');
+  assert.notStrictEqual(r?.result?.isError, true, 'list — no validation error on empty args');
+  const text = r?.result?.content?.[0]?.text ?? '';
+  assert.ok(text, 'list — content[0].text present');
+  const parsed = JSON.parse(text);
+  // Don't pin exact structure (kept loose intentionally — runList shape is
+  // covered in tools/list unit tests). Just confirm the envelope routed.
+  assert.strictEqual(typeof parsed, 'object', 'list — JSON-parseable response object');
+});
