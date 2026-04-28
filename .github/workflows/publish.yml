@@ -36,14 +36,21 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       # npm OIDC trusted-publisher support requires npm >= 11.5.1.
-      # Node 22's bundled npm (10.9.x) doesn't, so install a known-good
-      # version. `--force` works around npm/cli#7951 where the in-place
-      # self-upgrade can leave the install missing transitive deps
-      # (e.g. `Cannot find module 'promise-retry'`).
-      - name: Upgrade npm for OIDC trusted publishing
+      # Node 22's bundled npm (10.9.x) doesn't, and an in-place global
+      # self-upgrade (`npm install -g npm@11`) is broken on the runner
+      # by npm/cli#7951 (rebuild step strands `promise-retry` and the
+      # arborist tree). Install into a clean user-local prefix instead
+      # and put it first on PATH; this avoids touching the bundled
+      # install entirely.
+      - name: Install npm 11 (user-local, avoids self-upgrade bug)
         run: |
-          npm install -g --force npm@11
-          npm --version
+          set -euo pipefail
+          NPM11_PREFIX="$HOME/.local/npm11"
+          mkdir -p "$NPM11_PREFIX"
+          npm install --prefix "$NPM11_PREFIX" --no-audit --no-fund npm@11
+          NPM11_BIN="$NPM11_PREFIX/node_modules/.bin"
+          echo "$NPM11_BIN" >> "$GITHUB_PATH"
+          "$NPM11_BIN/npm" --version
 
       - name: Resolve target version
         id: version
