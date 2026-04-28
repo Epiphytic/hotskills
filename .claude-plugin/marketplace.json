@@ -1,6 +1,25 @@
 {
-  "name": "Hotskills",
+  "name": "hotskills",
   "description": "Discover, activate, and invoke Claude Code skills with security gating. Search skills.sh, activate with audit-based risk filtering, and inject skill context into your sessions automatically.",
-  "icon": "🔥",
-  "categories": ["productivity", "skills", "developer-tools"]
+  "owner": {
+    "name": "Liam Helmer",
+    "email": "liam.helmer@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "hotskills",
+      "source": "./",
+      "description": "Pre-configured skill management for Claude Code — discover, activate, and invoke skills from skills.sh and GitHub with security gating.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "homepage": "https://github.com/epiphytic/hotskills",
+      "repository": "https://github.com/epiphytic/hotskills",
+      "category": "productivity",
+      "tags": ["productivity", "skills", "developer-tools"],
+      "author": {
+        "name": "Liam Helmer",
+        "email": "liam.helmer@gmail.com"
+      }
+    }
+  ]
 }

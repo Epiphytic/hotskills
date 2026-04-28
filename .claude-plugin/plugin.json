@@ -2,7 +2,12 @@
   "name": "hotskills",
   "version": "0.1.0",
   "description": "Pre-configured skill management for Claude Code — discover, activate, and invoke skills from skills.sh and GitHub with security gating.",
-  "author": "liam.helmer@gmail.com",
+  "author": {
+    "name": "Liam Helmer",
+    "email": "liam.helmer@gmail.com"
+  },
   "license": "MIT",
-  "repository": "https://github.com/epiphytic/hotskills"
+  "homepage": "https://github.com/epiphytic/hotskills",
+  "repository": "https://github.com/epiphytic/hotskills",
+  "keywords": ["skills", "mcp", "security", "productivity"]
 }
