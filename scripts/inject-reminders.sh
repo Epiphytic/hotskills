@@ -59,21 +59,32 @@ _log_json() {
   printf '%s\n' "$line" >>"$LOG_FILE" 2>/dev/null || return 0
 }
 
+# Escape a string for inclusion as a JSON string value: backslashes first
+# (so we don't double-escape the backslashes we introduce for quotes), then
+# double-quotes. Newlines and other control chars are uncommon in the fields
+# we log here (event arg, command name, fs paths) and are left as-is to
+# keep the logger fast and dependency-free.
+_json_escape() {
+  local s="${1//\\/\\\\}"
+  printf '%s' "${s//\"/\\\"}"
+}
+
 _log_exception() {
-  local where="$1"
-  local cmd="${2//\"/\\\"}"
-  local line="$3"
-  _log_json "error" "hook_exception" "\"hook_event\":\"${EVENT:-unknown}\",\"where\":\"${where}\",\"command\":\"${cmd}\",\"line\":\"${line}\""
+  local where; where="$(_json_escape "$1")"
+  local cmd; cmd="$(_json_escape "$2")"
+  local line; line="$(_json_escape "$3")"
+  local evt; evt="$(_json_escape "${EVENT:-unknown}")"
+  _log_json "error" "hook_exception" "\"hook_event\":\"${evt}\",\"where\":\"${where}\",\"command\":\"${cmd}\",\"line\":\"${line}\""
 }
 
 _log_event_unknown() {
-  local got="${1//\"/\\\"}"
+  local got; got="$(_json_escape "$1")"
   _log_json "warn" "unknown_event_arg" "\"got\":\"${got}\""
 }
 
 _log_io() {
-  local what="${1//\"/\\\"}"
-  local path="${2//\"/\\\"}"
+  local what; what="$(_json_escape "$1")"
+  local path; path="$(_json_escape "$2")"
   _log_json "warn" "io_failure" "\"what\":\"${what}\",\"path\":\"${path}\""
 }
 
@@ -122,12 +133,31 @@ fi
 # need the activated list and the opportunistic flag — the full merge
 # logic lives in server/src/config.ts; we mirror enough of it here.
 
+# Hard cap on bytes read from any project/global JSON file before piping
+# into jq. Protects the <200ms hook budget against a pathological
+# config.json/state.json (e.g., 100MB nested array) that could wedge
+# prompt submission. Mirrors the Ajv depth/node bounds in
+# server/src/schemas/index.ts (see hotskills-kih).
+HOTSKILLS_HOOK_MAX_JSON_BYTES="${HOTSKILLS_HOOK_MAX_JSON_BYTES:-1048576}"
+
 read_json_or_empty() {
   local path="$1"
   if [[ -f "$path" ]] && [[ -r "$path" ]]; then
-    # cat then pipe so a parse failure returns {} not the contents
-    if cat "$path" 2>/dev/null | jq -ec . >/dev/null 2>&1; then
-      cat "$path" 2>/dev/null
+    # Reject oversize files outright — a single fstat round-trip and we
+    # avoid streaming megabytes through head + jq.
+    local size
+    size="$(stat -c %s -- "$path" 2>/dev/null || stat -f %z -- "$path" 2>/dev/null || echo 0)"
+    if [[ "$size" -gt "$HOTSKILLS_HOOK_MAX_JSON_BYTES" ]]; then
+      _log_io "config_too_large" "$path"
+      printf '{}'
+      return 0
+    fi
+    # head -c bounds the worst case where stat lied (network FS, race).
+    # Parse with jq; on failure return {} so callers see a clean empty config.
+    local content
+    content="$(head -c "$HOTSKILLS_HOOK_MAX_JSON_BYTES" -- "$path" 2>/dev/null)"
+    if printf '%s' "$content" | jq -ec . >/dev/null 2>&1; then
+      printf '%s' "$content"
       return 0
     else
       _log_io "config_parse_failed" "$path"

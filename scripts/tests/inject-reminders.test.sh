@@ -381,6 +381,84 @@ EOF
   teardown_fresh
 }
 
+# ─── Test 15: oversize config.json → exit 0, no stdout, log entry written ───
+test_oversize_config() {
+  setup_fresh
+  mkdir -p "$HOTSKILLS_PROJECT_CWD/.hotskills"
+  # Force a tiny cap so we don't have to write a real megabyte file.
+  export HOTSKILLS_HOOK_MAX_JSON_BYTES=64
+  # Produce a >64-byte JSON file that is still valid JSON (so parse-failure
+  # is not the path under test — size-cap is).
+  printf '{"version":1,"activated":[' > "$HOTSKILLS_PROJECT_CWD/.hotskills/config.json"
+  for i in $(seq 1 10); do
+    printf '{"skill_id":"x:y/z:s%s","activated_at":"2026-04-23T10:00:00Z"},' "$i" \
+      >> "$HOTSKILLS_PROJECT_CWD/.hotskills/config.json"
+  done
+  printf '{"skill_id":"x:y/z:last","activated_at":"2026-04-23T10:00:00Z"}]}' \
+    >> "$HOTSKILLS_PROJECT_CWD/.hotskills/config.json"
+  local out
+  out="$("$HOOK" --event=UserPromptSubmit 2>/dev/null)"
+  local rc=$?
+  assert_eq "$rc" "0" "oversize: exit code"
+  assert_empty "$out" "oversize: stdout empty (treated as no activated skills)"
+  local log="$HOTSKILLS_CONFIG_DIR/logs/hook.log"
+  if [[ -f "$log" ]]; then
+    local logtxt; logtxt="$(cat "$log")"
+    assert_contains "$logtxt" "config_too_large" "oversize: log entry written"
+  else
+    FAIL=$((FAIL + 1))
+    FAILURES+=("oversize: log file not created at $log")
+    echo "FAIL: oversize: log file not created" >&2
+  fi
+  unset HOTSKILLS_HOOK_MAX_JSON_BYTES
+  teardown_fresh
+}
+
+# ─── Test 16: backslashes in path field are escaped in hook.log JSON ───
+test_log_backslash_escape() {
+  setup_fresh
+  mkdir -p "$HOTSKILLS_PROJECT_CWD/.hotskills"
+  # Set a config dir whose path contains a literal backslash. The
+  # corrupted-config trigger writes the path into hook.log via _log_io;
+  # the resulting line MUST be valid JSON (i.e., backslash escaped as \\).
+  local weird_root="$TMPROOT/we\\ird"
+  mkdir -p "$weird_root/cfg/logs" "$weird_root/proj/.hotskills"
+  export HOTSKILLS_CONFIG_DIR="$weird_root/cfg"
+  export HOTSKILLS_PROJECT_CWD="$weird_root/proj"
+  printf 'not json{' > "$HOTSKILLS_PROJECT_CWD/.hotskills/config.json"
+  "$HOOK" --event=UserPromptSubmit >/dev/null 2>&1
+  local log="$HOTSKILLS_CONFIG_DIR/logs/hook.log"
+  if [[ ! -f "$log" ]]; then
+    FAIL=$((FAIL + 1))
+    FAILURES+=("log_backslash: hook.log not created")
+    echo "FAIL: log_backslash: hook.log not created" >&2
+    teardown_fresh
+    return
+  fi
+  # Each line of the log must parse as JSON. jq -e returns non-zero on parse
+  # failure or null. Assert every line parses.
+  local all_valid=1
+  while IFS= read -r line; do
+    if ! printf '%s' "$line" | jq -e . >/dev/null 2>&1; then
+      all_valid=0
+      echo "  invalid JSON line: $line" >&2
+    fi
+  done < "$log"
+  if [[ "$all_valid" -eq 1 ]]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+    FAILURES+=("log_backslash: at least one log line is not valid JSON")
+    echo "FAIL: log_backslash: at least one log line is not valid JSON" >&2
+  fi
+  # Decoded path field should contain the literal backslash (i.e., double
+  # backslash survived JSON unescaping back to a single one).
+  local got_path
+  got_path="$(jq -rs 'map(select(.event=="io_failure" and .what=="config_parse_failed"))[0].path // empty' "$log" 2>/dev/null)"
+  assert_contains "$got_path" "we\\ird" "log_backslash: path round-trips to single backslash"
+  teardown_fresh
+}
+
 # ─── Run all ───
 test_no_hotskills_dir
 test_empty_allowlist
@@ -396,6 +474,8 @@ test_description_truncation
 test_runtime_budget
 test_postcompact_no_opportunistic
 test_merged_dedup
+test_oversize_config
+test_log_backslash_escape
 
 echo
 echo "── inject-reminders.sh tests ──"
