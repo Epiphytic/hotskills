@@ -36,9 +36,14 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       # npm OIDC trusted-publisher support requires npm >= 11.5.1.
-      # Node 22's bundled npm may lag, so pin to a known-good version.
+      # Node 22's bundled npm (10.9.x) doesn't, so install a known-good
+      # version. `--force` works around npm/cli#7951 where the in-place
+      # self-upgrade can leave the install missing transitive deps
+      # (e.g. `Cannot find module 'promise-retry'`).
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
+        run: |
+          npm install -g --force npm@11
+          npm --version
 
       - name: Resolve target version
         id: version
