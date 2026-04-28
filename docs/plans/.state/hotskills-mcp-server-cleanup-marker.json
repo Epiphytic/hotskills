@@ -1,0 +1,7 @@
+{
+  "status": "complete",
+  "phase": "cleanup",
+  "slug": "hotskills-mcp-server",
+  "finished_at": "2026-04-28T15:31:56Z",
+  "notes": "Closed 5 tasks (rfc, wc1, pzt, 4vi, rrz); deferred 3 (cqz, may, 40w) with bd notes. 279 server tests + 49 hook assertions + 8 stdio E2E assertions passing. See 2026-04-23-hotskills-mcp-server-wrap-up.md."
+}
