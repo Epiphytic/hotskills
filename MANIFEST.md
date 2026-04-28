@@ -100,7 +100,7 @@ Synced from `vendor/vercel-skills/` at build time by `server/scripts/sync-vendor
 | Script | Description |
 | :--- | :--- |
 | `scripts/inject-reminders.sh` | ADR-005 hook script for `PostCompact` / `SessionStart` / `UserPromptSubmit`; emits `<system-reminder>` blocks; writes hook.log via shared logger format |
-| `scripts/tests/inject-reminders.test.sh` | Bash test harness for the hook script (14 scenarios / 44 assertions) |
+| `scripts/tests/inject-reminders.test.sh` | Bash test harness for the hook script (16 scenarios / 49 assertions) |
 | `scripts/phase0-api-verify.sh` | RISK-FIRST CI smoke-test for skills.sh `/api/search` and add-skill.vercel.sh `/audit` |
 | `scripts/phase0-npx-verify.sh` | RISK-FIRST CI smoke-test for `skills add --target` (currently fails: flag absent in v1.5.1) |
 | `scripts/phase0-lock-test.sh` | Lock-primitive concurrency check (5 workers; backed by `.github/workflows/phase0-lock-test.yml`) |
