@@ -1,0 +1,12 @@
+{
+  "id": "09-find-strategy-api",
+  "description": "discovery.find_strategy=api — search works via skills.sh /api/search?q= even with npx absent.",
+  "global_config": { "discovery": { "find_strategy": "api" } },
+  "project_config": null,
+  "scrub_npx_from_path": true,
+  "prompt": "/hotskills react",
+  "assertions": {
+    "search_called": true,
+    "search_strategy_used": "api"
+  }
+}

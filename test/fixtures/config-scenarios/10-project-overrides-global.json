@@ -1,0 +1,15 @@
+{
+  "id": "10-project-overrides-global",
+  "description": "Per-project override of global — global min_installs:10000, project min_installs:1000 → project wins for that project.",
+  "global_config": { "security": { "min_installs": 10000 } },
+  "project_config": { "security": { "min_installs": 1000 } },
+  "prompt": "/hotskills do-thing",
+  "synthetic_skill": {
+    "skill_id": "skills.sh:rando-org/some-pkg:do-thing",
+    "installs": 5000
+  },
+  "assertions": {
+    "activation_blocked": false,
+    "merged_min_installs": 1000
+  }
+}

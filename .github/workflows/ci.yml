@@ -36,3 +36,18 @@ jobs:
 
       - name: E2E (stdio)
         run: bash scripts/e2e.sh
+
+      # The two claude-driven E2Es (Plan-Phase 6 §6.6 / §6.7) are gated
+      # behind CI_E2E_CLAUDE=1 because they spend API credits and need
+      # the `claude` CLI on the runner. Without that env var they exit 0
+      # with a "skipped" message, so the job stays green for ordinary
+      # PRs.
+      - name: E2E (claude --plugin-dir keyword)
+        env:
+          CI_E2E_CLAUDE: ${{ vars.CI_E2E_CLAUDE || '0' }}
+        run: bash scripts/e2e-claude-keyword.sh
+
+      - name: E2E (claude --plugin-dir config-matrix)
+        env:
+          CI_E2E_CLAUDE: ${{ vars.CI_E2E_CLAUDE || '0' }}
+        run: bash scripts/e2e-claude-config.sh

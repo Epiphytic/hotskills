@@ -1,0 +1,12 @@
+{
+  "id": "03-mode-opportunistic",
+  "description": "mode=opportunistic — first prompt after compaction triggers hotskills.search automatically (alias for auto+opportunistic).",
+  "global_config": { "mode": "opportunistic", "opportunistic": true },
+  "project_config": null,
+  "prompt": "Help me with React component design.",
+  "simulate_event": "SessionStart",
+  "assertions": {
+    "search_called": true,
+    "opportunistic_reminder_emitted": true
+  }
+}

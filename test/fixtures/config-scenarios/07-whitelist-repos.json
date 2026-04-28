@@ -1,0 +1,15 @@
+{
+  "id": "07-whitelist-repos",
+  "description": "whitelist.repos — same as 06 scoped to a single owner/repo.",
+  "global_config": { "security": { "whitelist": { "repos": ["vercel-labs/agent-skills"] }, "min_installs": 999999999 } },
+  "project_config": null,
+  "prompt": "/hotskills react",
+  "synthetic_skill": {
+    "skill_id": "skills.sh:vercel-labs/agent-skills:react-best-practices",
+    "installs": 0
+  },
+  "assertions": {
+    "activation_blocked": false,
+    "whitelist_log_contains": "vercel-labs/agent-skills"
+  }
+}
