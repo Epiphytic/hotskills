@@ -2,11 +2,7 @@
   "mcpServers": {
     "hotskills": {
       "command": "npx",
-      "args": ["-y", "hotskills"],
-      "env": {
-        "HOTSKILLS_CONFIG_DIR": "${HOME}/.config/hotskills",
-        "HOTSKILLS_PROJECT_CWD": "${CLAUDE_PROJECT_DIR}"
-      }
+      "args": ["-y", "hotskills"]
     }
   }
 }

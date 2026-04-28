@@ -119,7 +119,16 @@ writeFileSync(
 );
 
 // ─── JSON-RPC client over stdio ───
-const child = spawn(process.execPath, [SERVER], {
+//
+// By default we spawn the locally-built server with the current node
+// binary. The "published-via-npx" E2E sets HOTSKILLS_E2E_CMD=npx and
+// HOTSKILLS_E2E_ARGS_JSON='["-y","hotskills"]' to spawn the registry
+// version instead — same protocol, different launcher.
+const spawnCmd = process.env.HOTSKILLS_E2E_CMD ?? process.execPath;
+const spawnArgs = process.env.HOTSKILLS_E2E_ARGS_JSON
+  ? JSON.parse(process.env.HOTSKILLS_E2E_ARGS_JSON)
+  : [SERVER];
+const child = spawn(spawnCmd, spawnArgs, {
   stdio: ['pipe', 'pipe', 'pipe'],
   env: { ...process.env, NODE_ENV: 'production' },
 });

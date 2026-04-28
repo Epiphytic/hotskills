@@ -67,6 +67,17 @@ function readEnvRequired(name: string, env = process.env): string {
   return raw;
 }
 
+/**
+ * True for values that look like an unsubstituted Claude Code template
+ * placeholder (e.g. literal `${CLAUDE_PROJECT_DIR}`). Some MCP-client
+ * implementations don't expand these in env-var values, so the literal
+ * string reaches the server. Treat it as "missing" and fall back to the
+ * appropriate default rather than failing the connect.
+ */
+function isUnsubstitutedPlaceholder(raw: string): boolean {
+  return /\$\{[A-Z_][A-Z0-9_]*\}/i.test(raw);
+}
+
 function canonicalize(raw: string): string {
   // path.resolve normalizes '..' and '.', expands relative paths against
   // cwd, and yields a canonical absolute form. Note that it does NOT
@@ -82,7 +93,17 @@ function canonicalize(raw: string): string {
  * directory, or the server lacks read+write access.
  */
 export function getProjectCwd(env: NodeJS.ProcessEnv = process.env): string {
-  const raw = readEnvRequired('HOTSKILLS_PROJECT_CWD', env);
+  // Accept unset, empty, or unsubstituted-placeholder values and fall
+  // back to the launcher's cwd. Claude Code spawns MCP servers with
+  // cwd = the project directory, so this matches the documented
+  // behavior of `${CLAUDE_PROJECT_DIR}` even when that template isn't
+  // expanded by the client.
+  const rawValue = env['HOTSKILLS_PROJECT_CWD'];
+  const useDefault =
+    rawValue === undefined ||
+    rawValue.trim() === '' ||
+    isUnsubstitutedPlaceholder(rawValue);
+  const raw = useDefault ? process.cwd() : rawValue;
   const canonical = canonicalize(raw);
 
   let stat;
@@ -176,8 +197,12 @@ export function getConfigDir(env: NodeJS.ProcessEnv = process.env): string {
   const defaultRoot = resolve(home, '.config', 'hotskills');
   const sandboxRoot = resolve(home, '.config');
 
-  const raw = env['HOTSKILLS_CONFIG_DIR'];
-  const effective = raw && raw.trim() !== '' ? canonicalize(raw) : defaultRoot;
+  const rawConfigDir = env['HOTSKILLS_CONFIG_DIR'];
+  const useDefault =
+    rawConfigDir === undefined ||
+    rawConfigDir.trim() === '' ||
+    isUnsubstitutedPlaceholder(rawConfigDir);
+  const effective = useDefault ? defaultRoot : canonicalize(rawConfigDir);
 
   const inSandbox = isChildOf(effective, sandboxRoot);
   const inDevOverride = devOverride !== null && isChildOf(effective, devOverride);
