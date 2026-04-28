@@ -33,3 +33,6 @@ jobs:
       - name: Test
         run: npm test
         working-directory: server
+
+      - name: E2E (stdio)
+        run: bash scripts/e2e.sh
